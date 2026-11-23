@@ -26,8 +26,36 @@ export class Weather {
     this.sun.target = this.sunTarget;
     this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.85);
     scene.add(this.hemi);
+    // Stars and a moon: invisible in daylight, out after dark.
+    this.stars = this._makeStars();
+    scene.add(this.stars);
+    this.moon = new THREE.Mesh(
+      new THREE.CircleGeometry(14, 24),
+      new THREE.MeshBasicMaterial({ color: 0xf0ead8, transparent: true, opacity: 0 }),
+    );
+    this.moon.position.set(-260, 220, -320);
+    this.moon.lookAt(0, 0, 0);
+    scene.add(this.moon);
     this.scene.background = new THREE.Color(0xffcf9e);
     this.scene.fog = new THREE.Fog(0xf2c48d, 180, 700);
+  }
+
+  _makeStars() {
+    const n = 300;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const e = Math.random() * Math.PI * 0.45 + 0.08; // above the horizon
+      const r = 700;
+      pos[i * 3] = Math.cos(a) * Math.cos(e) * r;
+      pos[i * 3 + 1] = Math.sin(e) * r;
+      pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    return new THREE.Points(geo, new THREE.PointsMaterial({
+      color: 0xffffff, size: 2.2, transparent: true, opacity: 0, sizeAttenuation: false,
+    }));
   }
 
   // hour: 0-24. Returns the clock string for the HUD.
@@ -58,6 +86,10 @@ export class Weather {
     else sky.setHSL(0.62, 0.5, 0.08);
     this.scene.background.copy(sky);
     this.scene.fog.color.copy(sky).lerp(new THREE.Color(0xf2c48d), golden * 0.5);
+    // Night falls: stars and moon fade in once the sun is well down.
+    const night = Math.max(0, Math.min(1, -elev * 3));
+    this.stars.material.opacity = night * 0.9;
+    this.moon.material.opacity = night * 0.95;
   }
 
   update(dt, focusPos) {

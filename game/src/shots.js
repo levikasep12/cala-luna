@@ -19,8 +19,11 @@ export function applyShot(game, name) {
   // would fire before the scene has actually moved.
   const waitGame = (seconds, note) => {
     const t0 = g.time;
+    const wall0 = performance.now();
     const tick = () => {
-      if (g.time - t0 >= seconds) setReady(note);
+      // Wall-clock fallback: if the game loop stalls (tab throttled,
+      // shader compile), the shot still releases after 8s.
+      if (g.time - t0 >= seconds || performance.now() - wall0 > 8000) setReady(note);
       else requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -72,6 +75,7 @@ export function applyShot(game, name) {
     g.camera.pitch = 0.22;
     g.camera.distBoost = 6;
     g.camera.heightBoost = 2;
+    g.camera.snapTo(g.player.pos, g.player.heading);
     g.hud.say('Ines', 'Roadblock on Meridian, helicopter overhead. Punch it, Luz — the marina is ninety seconds out.');
     waitGame(1.4, 'chase: 4 stars, roadblock, heli, Harbor Run live, 151 km/h');
     return;
@@ -88,6 +92,7 @@ export function applyShot(game, name) {
     g.player.heading = Math.PI / 2; // face -z, down the avenue
     g.player.group.position.copy(g.player.pos);
     g.player.group.rotation.y = -g.player.heading;
+    g.camera.snapTo(g.player.pos, g.player.heading);
     g.player.cash = 3250;
     g.sidejobs.startTaxi();
     g.traffic.ensureCount(16, g.player.pos);
@@ -116,8 +121,7 @@ export function applyShot(game, name) {
     g.player.heading = Math.PI / 2; // face the bank floor and the guards
     g.player.group.position.copy(g.player.pos);
     g.player.group.rotation.y = -g.player.heading;
-    g.player.group.position.copy(g.player.pos);
-    g.player.group.rotation.y = -g.player.heading;
+    g.camera.snapTo(g.player.pos, g.player.heading);
     g.player.setWeapon('pistol');
     g.player.ammo.pistol = 42;
     g.player.cash = 18750;

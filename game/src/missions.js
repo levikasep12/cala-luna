@@ -16,7 +16,32 @@ export class Missions {
     this.stepTimer = 0;
     this.holdTimer = 0;
     this.marker = null;     // 3D waypoint beacon
+    this.stealCar = null;   // the target car of a 'steal' step, if any
     this.completedJobs = new Set();
+  }
+
+  // Back to a new game: job 1, step 1, no markers, no spawned cars.
+  reset() {
+    this.game.combat.clearEnemies();
+    this._clearMarker();
+    this._clearStealCar();
+    this.jobIndex = 0;
+    this.stepIndex = 0;
+    this.active = false;
+    this.completedJobs = new Set();
+  }
+
+  _clearStealCar() {
+    if (this.stealCar) {
+      // Only remove it if Luz never took it: a stolen car she is
+      // driving (or parked) stays in the world.
+      if (this.stealCar.driver !== 'player') {
+        this.stealCar.dispose();
+        const i = this.game.worldCars.indexOf(this.stealCar);
+        if (i >= 0) this.game.worldCars.splice(i, 1);
+      }
+      this.stealCar = null;
+    }
   }
 
   get job() { return STORY[this.jobIndex]; }
@@ -40,7 +65,10 @@ export class Missions {
     if (s.wanted) this.game.police.setStars(s.wanted);
     if (s.type === 'steal') {
       // The target car waits at the marker, parked and unlocked.
+      // Restarting the step replaces it instead of stacking a second car.
+      this._clearStealCar();
       const car = new Vehicle(this.game.scene, s.vehicle || 'sports', s.at[0], s.at[1], 0);
+      this.stealCar = car;
       this.game.worldCars.push(car);
       this.game.hud.say('Marco', `There's the ${car.spec.name}. Take it — quiet if you can.`);
     }
@@ -51,7 +79,7 @@ export class Missions {
       }
     }
     this._placeMarker(s.at[0], s.at[1]);
-    this.game.hud.setObjective(`${this.job.name}: ${s.label}`);
+    this.game.hud.setObjective(`${this.job.name} (${this.stepIndex + 1}/${this.job.steps.length}): ${s.label}`);
   }
 
   _placeMarker(x, z) {
@@ -81,6 +109,7 @@ export class Missions {
   restart() {
     this.game.combat.clearEnemies();
     this._clearMarker();
+    this._clearStealCar();
     this.stepIndex = 0;
     this.active = true;
     this._beginStep();
@@ -133,7 +162,7 @@ export class Missions {
     const s = this.step;
     if (this.stepTimer > 0) {
       this.stepTimer -= dt;
-      this.game.hud.setObjective(`${this.job.name}: ${s.label} — ${Math.ceil(this.stepTimer)}s`, this.stepTimer);
+      this.game.hud.setObjective(`${this.job.name} (${this.stepIndex + 1}/${this.job.steps.length}): ${s.label} — ${Math.ceil(this.stepTimer)}s`, this.stepTimer);
       if (this.stepTimer <= 0) {
         this.fail('Out of time.');
         return;
@@ -155,7 +184,7 @@ export class Missions {
     } else if (s.type === 'hold') {
       if (dist < 14) {
         this.holdTimer += dt;
-        this.game.hud.setObjective(`${this.job.name}: ${s.label} — ${Math.ceil(s.holdSec - this.holdTimer)}s`, s.holdSec - this.holdTimer);
+        this.game.hud.setObjective(`${this.job.name} (${this.stepIndex + 1}/${this.job.steps.length}): ${s.label} — ${Math.ceil(s.holdSec - this.holdTimer)}s`, s.holdSec - this.holdTimer);
         if (this.holdTimer >= s.holdSec) this._advance();
       } else {
         this.holdTimer = 0;

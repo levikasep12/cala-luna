@@ -35,17 +35,14 @@ class Game {
     this.screen = 'title';
     this.time = 0;
     this.fps = 60;
-    this.stats = {
-      cashEarned: 0, missionsDone: 0, fares: 0, packages: 0, racesWon: 0,
-      stunts: 0, carsStolen: 0, kills: 0, busted: 0, wasted: 0, playSeconds: 0,
-    };
+    this.stats = this._newStats();
     this.worldCars = [];
     this.shopOpen = false;
     this.deadTimer = 0;
     this.saveTimer = 0;
     this.pedHitCooldown = 0;
     this.crashCooldown = 0;
-    this.cashBaseline = PLAYER.startCash;
+    this._lastCash = PLAYER.startCash; // cashEarned counts every gain
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -89,6 +86,14 @@ class Game {
   }
 
   // ---------- screens ----------
+  _newStats() {
+    return {
+      cashEarned: 0, missionsDone: 0, fares: 0, packages: 0, racesWon: 0,
+      stunts: 0, carsStolen: 0, kills: 0, busted: 0, wasted: 0, playSeconds: 0,
+      distanceKm: 0,
+    };
+  }
+
   _bindMenus() {
     const $ = (id) => document.getElementById(id);
     $('btn-play').onclick = () => { this.audio.init(); this.audio.resume(); this.audio.click(); Save.clear(); this.startGame({ fresh: true }); };
@@ -104,8 +109,7 @@ class Game {
     $('btn-resume').onclick = () => { this.audio.click(); this.resume(); };
     $('btn-restart-mission').onclick = () => { this.audio.click(); this.resume(); this.missions.restart(); };
     $('btn-quit-title').onclick = () => { this.audio.click(); this.saveGame(); this.showTitle(); };
-    const save = Save.load();
-    if (!save) $('btn-continue').style.display = 'none';
+    if (!Save.exists()) $('btn-continue').style.display = 'none';
   }
 
   _showOnly(id) {
@@ -120,10 +124,30 @@ class Game {
     this.hud.hide();
     this._showOnly('start-screen');
     this.audio.stopMusic();
+    this.audio.stopEngine();
   }
 
   startGame({ fresh, skipIntro = false }) {
-    if (!fresh) this._applySave(Save.load());
+    if (fresh) {
+      // A new game starts clean: a second PLAY in one page load used
+      // to keep the old crew, territory, garage and mission progress.
+      this.player.reset();
+      this.missions.reset();
+      this.crew.reset();
+      this.territory.reset();
+      this.garage.reset();
+      this.sidejobs.reset();
+      this.police.setStars(0);
+      this.police.clearAll();
+      this.combat.clearEnemies();
+      this.stats = this._newStats();
+      this.shopOpen = false;
+      this.deadTimer = 0;
+      this._lastCash = PLAYER.startCash;
+    } else {
+      this._applySave(Save.load());
+      this._lastCash = this.player.cash;
+    }
     this.screen = 'play';
     this._showOnly(null);
     this.hud.show();
@@ -131,6 +155,7 @@ class Game {
     this.audio.resume();
     this.audio.startEngine();
     this.audio.startMusic();
+    this.camera.snapTo(this.player.pos, this.player.heading);
     if (!this.missions.active && !this.missions.done) {
       this.missions.start();
     }
@@ -239,16 +264,12 @@ class Game {
   _shoot() {
     const p = this.player;
     if (p.weapon === 'fists') {
-      const hits = this.combat.playerShoot(p, this._aimPoint(), 0.016);
-      // Fists also work up close on enemies.
-      for (const e of this.combat.enemies) {
-        if (e.dead) continue;
-        if (Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) < 2.6) {
-          e.health -= 25;
-          if (e.health <= 0) { e.dead = true; e.g.rotation.x = -Math.PI / 2; this.stats.kills++; }
-        }
-      }
-      return hits;
+      // Fists hit through combat.playerShoot alone: the old code also
+      // ran a second melee loop here, so every punch landed twice.
+      const kills = this.combat.playerShoot(p, this._aimPoint(), 0.016);
+      this.stats.kills += kills;
+      this.pedestrians.scareAt(p.pos, 20);
+      return kills;
     }
     const before = this.combat.aliveCount();
     this.combat.playerShoot(p, this._aimPoint(), 0.016);
@@ -289,6 +310,7 @@ class Game {
     }
     p.pos.set(SHOPS.safehouse.at[0], 0, SHOPS.safehouse.at[1]);
     p.group.position.copy(p.pos);
+    this.camera.snapTo(p.pos, p.heading);
     p.health = PLAYER.maxHealth;
     p.armor = 0;
     this.saveGame();
@@ -323,6 +345,11 @@ class Game {
 
     // --- play ---
     this.stats.playSeconds += dt;
+    // Lifetime stats: cash earned counts every dollar that arrives,
+    // distance counts every kilometre driven.
+    if (this.player.cash > this._lastCash) this.stats.cashEarned += this.player.cash - this._lastCash;
+    this._lastCash = this.player.cash;
+    if (this.player.inCar) this.stats.distanceKm += (Math.abs(this.player.car.speed) * dt) / 1000;
     this.saveTimer += dt;
     if (this.saveTimer > 30) { this.saveTimer = 0; this.saveGame(); }
     if (this.pedHitCooldown > 0) this.pedHitCooldown -= dt;
@@ -345,6 +372,14 @@ class Game {
       this.hud.setHint(muted ? 'Sound muted' : 'Sound on');
     }
     if (input.pressed('KeyQ')) this.crew.useAbility();
+    if (input.pressed('KeyH') && p.inCar) {
+      this.audio.horn();
+      this.pedestrians.scareAt(p.pos, 15);
+    }
+    if (input.pressed('KeyC')) {
+      const view = this.camera.cycleView();
+      this.hud.setHint(`Camera: ${view}`);
+    }
     if (input.pressed('KeyR')) {
       if (this.missions.active) this.missions.restart();
       else {
@@ -368,6 +403,7 @@ class Game {
       if (input.pressed('Digit2')) this.economy.buy('shotgun');
       if (input.pressed('Digit3')) this.economy.buy('rifle');
       if (input.pressed('Digit4')) this.economy.buy('armor');
+      if (input.pressed('Digit5')) this.economy.buy('medkit');
       if (this.shopOpen) this.hud.setObjective(this.economy.shopText());
     } else {
       if (input.pressed('Digit1')) p.setWeapon('fists');
@@ -400,6 +436,8 @@ class Game {
       p.car.drive(dt, throttle, steer, input.down('Space'));
       this.city.resolveCollision(p.car.pos, 2.4);
       p.syncFromCar();
+      // Handbrake at speed: tyres complain.
+      if (input.down('Space') && Math.abs(p.car.speed) > 15 && Math.random() < dt * 3) this.audio.skid();
       // Car-vs-car bumps.
       for (const other of [...this.traffic.all(), ...this.police.allUnits()]) {
         if (other === p.car) continue;
@@ -413,6 +451,7 @@ class Game {
             p.car.damage(4);
             other.damage(4);
             this.audio.crash();
+            this.effects.sparks(p.car.pos);
             this.camera.addShake(0.4);
             this.crashCooldown = 0.5;
           }
@@ -441,7 +480,7 @@ class Game {
       }
       this.audio.setEngine(Math.abs(p.car ? p.car.speed : 0) / 55, true);
     } else {
-      p.moveOnFoot(dt, axes.x, axes.y, this.camera.yaw, input.down('ShiftLeft') || input.down('ShiftRight'), input.pressed('Space'), this.city);
+      p.moveOnFoot(dt, axes.x, axes.y, this.camera.yaw, input.sprint(), input.pressed('Space'), this.city);
       this.audio.setEngine(0, false);
       if (input.consumeMouseClick()) this._shoot();
       else if (input.mouseDown && p.weapon === 'rifle') this._shoot();
@@ -466,7 +505,7 @@ class Game {
     if (this.missions.active && !this.sidejobs.taxi && !this.sidejobs.package && !this.sidejobs.race && !this.shopOpen) {
       const s = this.missions.step;
       if (s && !s.timeLimit && this.hud.objective === '') {
-        this.hud.setObjective(`${this.missions.job.name}: ${s.label}`);
+        this.hud.setObjective(`${this.missions.job.name} (${this.missions.stepIndex + 1}/${this.missions.job.steps.length}): ${s.label}`);
       }
     }
 

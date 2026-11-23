@@ -71,10 +71,15 @@ export class Vehicle {
     hl.position.set(len / 2 + 0.05, 0.95, wid / 2 - 0.4);
     this.group.add(hl);
     const hl2 = hl.clone(); hl2.position.z = -wid / 2 + 0.4; this.group.add(hl2);
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.3, 0.5), new THREE.MeshBasicMaterial({ color: 0xff3020 }));
+    const tlMat = new THREE.MeshBasicMaterial({ color: 0x881512 });
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.3, 0.5), tlMat);
     tl.position.set(-len / 2 - 0.05, 0.95, wid / 2 - 0.4);
     this.group.add(tl);
     const tl2 = tl.clone(); tl2.position.z = -wid / 2 + 0.4; this.group.add(tl2);
+    // Brake lights: dim at cruise, bright when reversing or handbraking.
+    this.tailLights = [tl, tl2];
+    this.tailDim = tlMat;
+    this.tailBright = new THREE.MeshBasicMaterial({ color: 0xff3020 });
     // Police light bar
     if (this.type === 'police') {
       const bar = new THREE.Group();
@@ -107,8 +112,17 @@ export class Vehicle {
     if (Math.abs(this.speed) < 0.05 && throttle === 0) this.speed = 0;
     const max = s.topSpeed * (this.health < 30 ? 0.55 : 1);
     this.speed = Math.max(-12, Math.min(max, this.speed));
-    const turnRate = this.steer * (0.9 + Math.min(1, Math.abs(this.speed) / 20) * 0.9) * (handbrake ? 1.7 : 1);
+    // Damage degrades the handling, not just the top speed: a beaten-up
+    // car turns sluggish, so a chase in a wreck feels like a chase.
+    const handling = 0.6 + 0.4 * (this.health / 100);
+    const turnRate = this.steer * (0.9 + Math.min(1, Math.abs(this.speed) / 20) * 0.9) * (handbrake ? 1.7 : 1) * handling;
     this.heading += turnRate * dt * Math.sign(this.speed || 1) * Math.min(1, Math.abs(this.speed) / 6 + 0.25);
+    // Brake lights: brighten when reversing or handbraking.
+    const braking = throttle < 0 || handbrake;
+    const wantMat = braking ? this.tailBright : this.tailDim;
+    if (this.tailLights[0].material !== wantMat) {
+      for (const t of this.tailLights) t.material = wantMat;
+    }
     const dx = Math.cos(this.heading) * this.speed * dt;
     const dz = -Math.sin(this.heading) * this.speed * dt;
     this.pos.x += dx;
@@ -170,6 +184,7 @@ export class Helicopter {
     spot.rotation.x = -Math.PI / 2;
     spot.position.y = -13;
     this.group.add(spot);
+    this.spot = spot;
     this.hoverHeight = 15;
     // Spawn above the target, not at the world origin.
     const sx = start ? start.x : 0;
@@ -189,6 +204,11 @@ export class Helicopter {
     );
     this.group.position.lerp(want, Math.min(1, dt * 1.8));
     this.group.rotation.y = Math.atan2(target.x - this.group.position.x, target.z - this.group.position.z);
+    // The searchlight sweeps a slow circle around the target instead of
+    // sitting dead-centre: the heli is visibly hunting.
+    const sw = time * 0.7;
+    this.spot.position.x = Math.cos(sw) * 4;
+    this.spot.position.z = Math.sin(sw) * 4;
   }
 
   dispose() { this.scene.remove(this.group); }

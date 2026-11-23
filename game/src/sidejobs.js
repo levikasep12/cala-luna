@@ -13,6 +13,14 @@ export class SideJobs {
     this.stuntCooldown = 0;
   }
 
+  // Back to a new game: no fare, no package, no race.
+  reset() {
+    this.taxi = null;
+    this.package = null;
+    this.race = null;
+    this.stuntCooldown = 0;
+  }
+
   startTaxi() {
     if (this.taxi) return false;
     const g = this.game;
@@ -21,7 +29,7 @@ export class SideJobs {
     const dx = Math.round((Math.random() * 10 - 5)) * 60;
     const dz = Math.round((Math.random() * 10 - 5)) * 60;
     const fare = 120 + Math.round(Math.hypot(dx - px, dz - pz) / 10) * 15;
-    this.taxi = { pickup: [px, pz], dropoff: [dx, dz], fare, state: 'pickup' };
+    this.taxi = { pickup: [px, pz], dropoff: [dx, dz], fare, state: 'pickup', t0: 0 };
     g.hud.setObjective(`Taxi fare: pick up in ${g.city.districtAt(px, pz).name} — $${fare}`);
     g.hud.say('Dispatcher', 'Fare waiting. Pick them up and drive smooth — tips for fast drops.');
     return true;
@@ -32,8 +40,11 @@ export class SideJobs {
     const g = this.game;
     const dx = Math.round((Math.random() * 10 - 5)) * 60;
     const dz = Math.round((Math.random() * 10 - 5)) * 60;
-    this.package = { dropoff: [dx, dz], reward: 350, timer: 100 };
-    g.hud.setObjective(`Package run: deliver to ${g.city.districtAt(dx, dz).name} in 100s — $350`);
+    // Longer runs pay more: $250 base plus $50 per city block of distance.
+    const dist = Math.hypot(dx - g.player.pos.x, dz - g.player.pos.z);
+    const reward = 250 + Math.round(dist / 60) * 50;
+    this.package = { dropoff: [dx, dz], reward, timer: 100 };
+    g.hud.setObjective(`Package run: deliver to ${g.city.districtAt(dx, dz).name} in 100s — $${reward}`);
     return true;
   }
 
@@ -47,6 +58,7 @@ export class SideJobs {
     }
     g.player.cash -= def.entry;
     this.race = { def, checkpoint: 0, timer: 0 };
+    g.audio.countdown();
     g.hud.setObjective(`${def.name}: hit checkpoint 1 of ${def.checkpoints.length}`);
     g.hud.showBanner(def.name.toUpperCase());
     return true;
@@ -63,13 +75,16 @@ export class SideJobs {
       if (d < 9) {
         if (t.state === 'pickup') {
           t.state = 'dropoff';
+          t.t0 = g.time; // the tip clock starts when the fare gets in
           g.hud.setObjective(`Taxi fare: drop off in ${g.city.districtAt(t.dropoff[0], t.dropoff[1]).name} — $${t.fare}`);
           g.hud.say('Passenger', 'The Marina, please. And step on it — I tip for speed.');
         } else {
-          player.cash += t.fare;
+          // Fast drop, big tip: under 60 seconds pays +50% on the fare.
+          const tip = (g.time - t.t0) < 60 ? Math.round(t.fare * 0.5) : 0;
+          player.cash += t.fare + tip;
           g.stats.fares++;
           g.audio.cash();
-          g.hud.say('Passenger', 'Perfect. Keep the change, Luz.');
+          g.hud.say('Passenger', tip > 0 ? `Perfect — and fast. $${tip} tip on top.` : 'Perfect. Keep the change, Luz.');
           this.taxi = null;
           g.hud.clearObjective();
         }
@@ -89,7 +104,7 @@ export class SideJobs {
           player.cash += p.reward;
           g.stats.packages++;
           g.audio.cash();
-          g.hud.say('Dispatcher', 'Delivered clean. $350 on its way.');
+          g.hud.say('Dispatcher', `Delivered clean. $${p.reward} on its way.`);
           this.package = null;
           g.hud.clearObjective();
         }
@@ -125,7 +140,8 @@ export class SideJobs {
         const d = Math.hypot(player.pos.x - s.ramp[0], player.pos.z - s.ramp[1]);
         if (d < 6 && player.car.speedKmh > 80) {
           this.stuntCooldown = 10;
-          const reward = 500;
+          // Faster air pays more: $300 at 80 km/h up to $1,000 flat-out.
+          const reward = Math.min(1000, 300 + Math.round((player.car.speedKmh - 80) * 5));
           player.cash += reward;
           g.stats.stunts++;
           g.audio.missionPass();

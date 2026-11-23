@@ -14,6 +14,8 @@ export class Player {
     this.onGround = true;
     this.health = PLAYER.maxHealth;
     this.armor = 0;
+    this.stamina = PLAYER.maxStamina;
+    this.sprintLocked = false; // sprint blocked until stamina recovers
     this.cash = PLAYER.startCash;
     this.weapon = 'fists';
     this.ammo = { pistol: 60, shotgun: 20, rifle: 0 };
@@ -76,6 +78,27 @@ export class Player {
 
   heal(amount) { this.health = Math.min(PLAYER.maxHealth, this.health + amount); }
 
+  // Back to a new game: full health, starting cash, starting loadout,
+  // on foot at the safehouse. A fresh PLAY uses this; CONTINUE loads a save.
+  reset() {
+    if (this.car) { this.car.driver = null; this.car = null; }
+    this.pos.set(PLAYER.startPos[0], 0, PLAYER.startPos[1]);
+    this.heading = 0;
+    this.velY = 0;
+    this.onGround = true;
+    this.health = PLAYER.maxHealth;
+    this.armor = 0;
+    this.stamina = PLAYER.maxStamina;
+    this.sprintLocked = false;
+    this.cash = PLAYER.startCash;
+    this.weapon = 'fists';
+    this.ammo = { pistol: 60, shotgun: 20, rifle: 0 };
+    this.owned = new Set(['fists', 'pistol']);
+    this.group.visible = true;
+    this.group.position.copy(this.pos);
+    this.gunMesh.visible = false;
+  }
+
   enterCar(car) {
     this.car = car;
     car.driver = 'player';
@@ -98,15 +121,25 @@ export class Player {
 
   // On-foot movement for one step. moveX/moveY are camera-relative axes.
   moveOnFoot(dt, moveX, moveY, camYaw, sprint, jump, city) {
-    if (this.inCar) return;
-    const speed = sprint ? PLAYER.runSpeed : PLAYER.walkSpeed;
+    if (this.inCar) { this._regenStamina(dt); return; }
     // Camera-relative: forward is -z rotated by camYaw.
     const fx = Math.sin(camYaw), fz = Math.cos(camYaw);
     const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
     let mx = fx * moveY + rx * moveX;
     let mz = fz * moveY + rz * moveX;
     const len = Math.hypot(mx, mz);
-    if (len > 0.01) {
+    const moving = len > 0.01;
+    // Sprinting drains stamina; at 0 the sprint locks until the bar
+    // recovers past the refill mark, so a flat-out run needs pacing.
+    const wantSprint = sprint && moving && !this.sprintLocked;
+    const speed = wantSprint ? PLAYER.runSpeed : PLAYER.walkSpeed;
+    if (wantSprint) {
+      this.stamina = Math.max(0, this.stamina - PLAYER.staminaDrain * dt);
+      if (this.stamina <= 0) this.sprintLocked = true;
+    } else {
+      this._regenStamina(dt);
+    }
+    if (moving) {
       mx /= len; mz /= len;
       this.pos.x += mx * speed * dt;
       this.pos.z += mz * speed * dt;
@@ -115,7 +148,7 @@ export class Player {
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       this.heading += Math.max(-10 * dt, Math.min(10 * dt, diff));
-      this.walkPhase += dt * (sprint ? 13 : 8);
+      this.walkPhase += dt * (wantSprint ? 13 : 8);
     }
     if (jump && this.onGround) {
       this.velY = PLAYER.jumpSpeed;
@@ -139,6 +172,11 @@ export class Player {
   }
 
   punch() { this.punchTimer = 0.3; }
+
+  _regenStamina(dt) {
+    this.stamina = Math.min(PLAYER.maxStamina, this.stamina + PLAYER.staminaRegen * dt);
+    if (this.stamina >= PLAYER.staminaRefill) this.sprintLocked = false;
+  }
 
   syncFromCar() {
     if (this.car) {

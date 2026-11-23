@@ -4,14 +4,14 @@
 // stats. The minimap is a canvas: streets, player, waypoint, police,
 // traffic and territory colours.
 
-import { WORLD, DISTRICTS } from './config.js';
+import { WORLD, DISTRICTS, WEAPONS, STUNTS } from './config.js';
 
 export class Hud {
   constructor() {
     this.el = {};
     for (const id of ['hud', 'cash-value', 'clock-district', 'wanted-stars', 'health-fill', 'armor-fill',
-      'objective-label', 'objective-text', 'hud-objective', 'speed-value', 'speed-unit', 'vehicle-name',
-      'weapon-name', 'ammo-value', 'crew-status', 'dialogue-bar', 'dialogue-speaker', 'dialogue-text',
+      'stamina-fill', 'objective-label', 'objective-text', 'hud-objective', 'speed-value', 'speed-unit', 'vehicle-name',
+      'hud-weapon', 'weapon-name', 'ammo-value', 'crew-status', 'dialogue-bar', 'dialogue-speaker', 'dialogue-text',
       'banner', 'hud-hint', 'mission-card', 'mission-card-title', 'mission-card-name', 'mission-card-reward',
       'mission-card-sub', 'busted-card', 'busted-title', 'busted-sub']) {
       this.el[id] = document.getElementById(id);
@@ -85,11 +85,16 @@ export class Hud {
     this.el['wanted-stars'].classList.toggle('hot', stars >= 3);
     this.el['health-fill'].style.width = `${p.health}%`;
     this.el['armor-fill'].style.width = `${p.armor}%`;
+    this.el['stamina-fill'].style.width = `${p.stamina}%`;
     this.el['speed-value'].textContent = Math.round(p.speedKmh);
     this.el['speed-unit'].textContent = p.inCar ? 'KM/H' : 'ON FOOT';
     this.el['vehicle-name'].textContent = p.inCar ? p.car.spec.name : d.name + ' — ' + game.territory.statusText();
     this.el['weapon-name'].textContent = p.weapon.toUpperCase();
     this.el['ammo-value'].textContent = p.weapon === 'fists' ? '∞' : String(p.ammo[p.weapon] || 0);
+    // Low ammo turns the weapon readout red below a quarter of a full mag.
+    const spec = WEAPONS[p.weapon];
+    const lowAmmo = p.weapon !== 'fists' && spec && (p.ammo[p.weapon] || 0) < spec.ammo * 0.25;
+    this.el['hud-weapon'].classList.toggle('low', !!lowAmmo);
     this.el['crew-status'].textContent = game.crew.statusText();
     if (this.dialogueTimer > 0) {
       this.dialogueTimer -= dt;
@@ -141,12 +146,20 @@ export class Hud {
     for (const lm of Object.values(game.city.landmarks)) {
       g.fillRect(px(lm.x) - 2, pz(lm.z) - 2, 4, 4);
     }
-    // Waypoint.
+    // Stunt ramps (orange triangles).
+    g.fillStyle = '#d8b13a';
+    for (const s of STUNTS) {
+      const sx = px(s.ramp[0]), sy = pz(s.ramp[1]);
+      g.beginPath();
+      g.moveTo(sx, sy - 4); g.lineTo(sx + 4, sy + 3); g.lineTo(sx - 4, sy + 3); g.closePath();
+      g.fill();
+    }
+    // Waypoint (pulsing, so it reads at a glance).
     const wp = game.missions.waypoint() || game.sidejobs.waypoint();
     if (wp) {
       g.fillStyle = '#ffd166';
       g.beginPath();
-      g.arc(px(wp.x), pz(wp.z), 6, 0, Math.PI * 2);
+      g.arc(px(wp.x), pz(wp.z), 5 + Math.sin(game.time * 4) * 1.5, 0, Math.PI * 2);
       g.fill();
       g.strokeStyle = '#fff';
       g.lineWidth = 1.5;
@@ -168,11 +181,12 @@ export class Hud {
     for (const e of game.combat.enemies) {
       if (!e.dead) g.fillRect(px(e.pos.x) - 2, pz(e.pos.z) - 2, 4, 4);
     }
-    // Player arrow.
+    // Player arrow. Canvas rotate() is clockwise and the arrow is drawn
+    // pointing up, so heading 0 (+x, east) needs a quarter turn right.
     const p = game.player;
     g.save();
     g.translate(px(p.pos.x), pz(p.pos.z));
-    g.rotate(Math.atan2(p.pos.z, p.pos.x) * 0 + (p.heading + Math.PI / 2) * -1 + Math.PI);
+    g.rotate(Math.PI / 2 - p.heading);
     g.fillStyle = '#ffffff';
     g.beginPath();
     g.moveTo(0, -8); g.lineTo(5, 6); g.lineTo(-5, 6); g.closePath();

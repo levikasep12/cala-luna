@@ -9,9 +9,13 @@ export class Effects {
     this.particles = []; // {mesh, vel, life, maxLife}
     this.tracers = [];
     this.flashes = [];
+    this.rings = []; // shockwave rings from explosions
   }
 
   _spawn(pos, color, size, vel, life) {
+    // Cap the live count: a long firefight must not grow the particle
+    // list without bound.
+    if (this.particles.length > 300) return;
     const m = new THREE.Mesh(
       new THREE.BoxGeometry(size, size, size),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }),
@@ -40,6 +44,25 @@ export class Effects {
     this.burst(pos, 0xffa020, 26, 10, 0.7);
     this.burst(pos, 0xff5020, 18, 7, 0.9);
     this.burst(pos, 0x444444, 12, 4, 1.1);
+    this.ring(pos);
+  }
+
+  // Metal-on-metal sparks for car bumps.
+  sparks(pos) {
+    this.burst(new THREE.Vector3(pos.x, 0.8, pos.z), 0xffd166, 6, 5, 0.18);
+    this.burst(new THREE.Vector3(pos.x, 0.8, pos.z), 0xffffff, 4, 7, 0.12);
+  }
+
+  // A flat shockwave ring that expands and fades over half a second.
+  ring(pos) {
+    const m = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 1.0, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffa020, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(pos.x, 0.3, pos.z);
+    this.scene.add(m);
+    this.rings.push({ mesh: m, life: 0.5, maxLife: 0.5 });
   }
 
   muzzleFlash(origin, heading) {
@@ -101,6 +124,20 @@ export class Effects {
         f.mesh.material.dispose();
         this.flashes.splice(i, 1);
       }
+    }
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.life -= dt;
+      if (r.life <= 0) {
+        this.scene.remove(r.mesh);
+        r.mesh.geometry.dispose();
+        r.mesh.material.dispose();
+        this.rings.splice(i, 1);
+        continue;
+      }
+      const k = 1 - r.life / r.maxLife;
+      r.mesh.scale.setScalar(1 + k * 9);
+      r.mesh.material.opacity = 0.7 * (1 - k);
     }
   }
 }

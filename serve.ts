@@ -1,6 +1,6 @@
 // CALA LUNA — a tiny static server for game/ (Node 22, standard library
 // only), so the game can be played locally without a build step:
-//   node serve.ts [--port 8080]
+//   node serve.ts [--port 8080] [--host 127.0.0.1]
 // Serves game/ at http://localhost:8080 with the MIME types a browser
 // game needs. A development convenience, not a web server.
 
@@ -14,6 +14,8 @@ const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
 const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
+const hostIndex = args.indexOf('--host');
+const host = hostIndex === -1 ? undefined : (args[hostIndex + 1] || undefined);
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -31,7 +33,7 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-createServer((request, response) => {
+const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost');
   let pathname = decodeURIComponent(url.pathname);
   if (pathname.endsWith('/')) pathname += 'index.html';
@@ -52,6 +54,23 @@ createServer((request, response) => {
   response.writeHead(200, {
     'content-type': MIME[extname(file)] ?? 'application/octet-stream',
     'content-length': size,
+    // Development server: never let the browser cache a stale build.
+    'cache-control': 'no-cache',
   });
+  // HEAD asks for headers only: no body, or the client hangs waiting
+  // for bytes it never asked for.
+  if (request.method === 'HEAD') { response.end(); return; }
   createReadStream(file).pipe(response);
-}).listen(port, () => console.log(`CALA LUNA at http://localhost:${port}`));
+});
+
+server.on('error', (err) => {
+  const code = (err as { code?: string }).code;
+  if (code === 'EADDRINUSE') {
+    console.error(`CALA LUNA: port ${port} is already in use — try node serve.ts --port ${port + 1}`);
+  } else {
+    console.error('CALA LUNA: server error:', err.message);
+  }
+  process.exitCode = 1;
+});
+
+server.listen(port, host, () => console.log(`CALA LUNA at http://${host ?? 'localhost'}:${port}`));

@@ -65,6 +65,7 @@ export class Pedestrians {
       target: this._newTarget(px, pz),
       fleeing: 0,
       state: 'walk',
+      waitTimer: 0,
     });
   }
 
@@ -101,12 +102,26 @@ export class Pedestrians {
         p.pos.x += Math.cos(p.heading) * 5.5 * dt;
         p.pos.z += -Math.sin(p.heading) * 5.5 * dt;
         if (p.fleeing <= 0) p.state = 'walk';
+      } else if (p.state === 'wait') {
+        // Standing at the corner, deciding where to go next.
+        p.waitTimer -= dt;
+        if (p.waitTimer <= 0) {
+          p.state = 'walk';
+          p.target = this._newTarget(p.pos.x, p.pos.z);
+        }
       } else {
         const t = p.target;
         const tx = t.x - p.pos.x, tz = t.z - p.pos.z;
         const dist = Math.hypot(tx, tz);
         if (dist < 3) {
-          p.target = this._newTarget(p.pos.x, p.pos.z);
+          // Reached the corner: sometimes wait a few seconds instead
+          // of pivoting at once, like a person with somewhere to be.
+          if (rng() < 0.4) {
+            p.state = 'wait';
+            p.waitTimer = 2 + rng() * 3;
+          } else {
+            p.target = this._newTarget(p.pos.x, p.pos.z);
+          }
         } else {
           const want = Math.atan2(-tz, tx);
           let diff = want - p.heading;
@@ -119,11 +134,11 @@ export class Pedestrians {
       }
       city.resolveCollision(p.pos, 0.6);
       p.g.rotation.y = -p.heading;
-      p.walkPhase += dt * (p.state === 'flee' ? 14 : 7);
-      const swing = Math.sin(p.walkPhase) * (p.state === 'flee' ? 0.9 : 0.5);
+      if (p.state !== 'wait') p.walkPhase += dt * (p.state === 'flee' ? 14 : 7);
+      const swing = p.state === 'wait' ? 0 : Math.sin(p.walkPhase) * (p.state === 'flee' ? 0.9 : 0.5);
       p.armL.rotation.x = swing;
       p.armR.rotation.x = -swing;
-      p.g.position.y = Math.abs(Math.sin(p.walkPhase)) * 0.06;
+      p.g.position.y = p.state === 'wait' ? 0 : Math.abs(Math.sin(p.walkPhase)) * 0.06;
     }
   }
 

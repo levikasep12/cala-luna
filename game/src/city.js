@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { WORLD, DISTRICTS, SHOPS, STUNTS } from './config.js';
-import { makeRng, pick, range, rangeInt, chance } from './random.js';
+import { makeRng, pick, range, rangeInt, chance, gauss } from './random.js';
 
 const PALETTE = [0xd8c49a, 0xc9a06c, 0xb08a5e, 0x9db3c8, 0xc98d7a, 0xa8b89a, 0xd9c9a3, 0x8fa3b8];
 
@@ -31,13 +31,18 @@ export class City {
   }
 
   // Push a circle (x,z,r) out of every building footprint it overlaps.
+  // Checks ALL colliders: stopping at the first hit left the circle
+  // inside a second overlapping footprint (common where a landmark
+  // sits next to a tall block).
   resolveCollision(pos, radius) {
+    let hit = false;
     for (const b of this.colliders) {
       const cx = Math.max(b.x0, Math.min(pos.x, b.x1));
       const cz = Math.max(b.z0, Math.min(pos.z, b.z1));
       const dx = pos.x - cx, dz = pos.z - cz;
       const d2 = dx * dx + dz * dz;
       if (d2 < radius * radius) {
+        hit = true;
         if (d2 > 1e-6) {
           const d = Math.sqrt(d2);
           pos.x = cx + (dx / d) * radius;
@@ -45,14 +50,13 @@ export class City {
         } else {
           pos.x = b.x1 + radius;
         }
-        return true;
       }
     }
     // World bounds
     const m = WORLD.halfSize;
     pos.x = Math.max(-m, Math.min(m, pos.x));
     pos.z = Math.max(-m, Math.min(WORLD.waterZ - 6, pos.z));
-    return false;
+    return hit;
   }
 
   nearestStreet(x, z) {
@@ -178,17 +182,38 @@ export class City {
       }
     }
 
-    // Buildings: one or two per block, taller downtown.
+    // Buildings: one or two per block, taller downtown. Heights use a
+    // bell curve, not a flat spread, so most blocks read mid-rise and
+    // only a few towers break the skyline.
     const winMats = PALETTE.map((c) => new THREE.MeshLambertMaterial({
       map: this._windowTexture('#' + c.toString(16).padStart(6, '0'), 0.25),
     }));
     const roofMat = new THREE.MeshLambertMaterial({ color: 0x4a4238 });
+    const treeTrunkMat = new THREE.MeshLambertMaterial({ color: 0x6a4a2a });
+    const treeLeafMat = new THREE.MeshLambertMaterial({ color: 0x4a8f3f });
     for (let bx = -half + block / 2; bx < half; bx += block) {
       for (let bz = -half + block / 2; bz < WORLD.beachZ - 10; bz += block) {
-        if (chance(rng, 0.12)) continue; // empty lot / park
+        if (chance(rng, 0.12)) {
+          // Empty lot becomes a pocket park: a few trees, no collider,
+          // so the block stays walkable.
+          const trees = rangeInt(rng, 2, 4);
+          for (let t = 0; t < trees; t++) {
+            const tx = bx + range(rng, -18, 18);
+            const tz = bz + range(rng, -18, 18);
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 5, 5), treeTrunkMat);
+            trunk.position.set(tx, 2.5, tz);
+            trunk.castShadow = true;
+            this.group.add(trunk);
+            const crown = new THREE.Mesh(new THREE.ConeGeometry(3.2, 7, 6), treeLeafMat);
+            crown.position.set(tx, 8, tz);
+            crown.castShadow = true;
+            this.group.add(crown);
+          }
+          continue;
+        }
         const d = this.districtAt(bx, bz);
         const downtown = d.id === 'downtown';
-        const h = downtown ? range(rng, 40, 95) : range(rng, 12, 42);
+        const h = downtown ? 40 + gauss(rng) * 55 : 12 + gauss(rng) * 30;
         const w = range(rng, 22, 40);
         const dep = range(rng, 22, 40);
         const mat = pick(rng, winMats);
@@ -327,6 +352,8 @@ export class City {
   update(dt, time) {
     if (this.water) {
       this.water.position.y = 0.15 + Math.sin(time * 0.5) * 0.12;
+      // Gentle shimmer: the bay breathes with the swell.
+      this.water.material.opacity = 0.85 + Math.sin(time * 0.8) * 0.05;
     }
   }
 }

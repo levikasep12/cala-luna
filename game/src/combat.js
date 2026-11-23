@@ -33,7 +33,10 @@ export class Combat {
     g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     g.position.set(x, 0, z);
     this.group.add(g);
-    const e = { g, pos: g.position, health: 60, shootTimer: 1 + Math.random() * 2, gang, dead: false };
+    const e = {
+      g, pos: g.position, health: 60, shootTimer: 1 + Math.random() * 2, gang, dead: false,
+      strafeDir: Math.random() < 0.5 ? 1 : -1, strafeTimer: 2 + Math.random() * 2,
+    };
     this.enemies.push(e);
     return e;
   }
@@ -80,7 +83,8 @@ export class Combat {
         if (d < bestD) { best = e; bestD = d; }
       }
       const end = origin.clone().addScaledVector(dir, best ? bestD : spec.range);
-      this.effects.tracer(origin, end);
+      // Fists don't draw a tracer or a muzzle flash: a punch is not a gun.
+      if (player.weapon !== 'fists') this.effects.tracer(origin, end);
       if (best) {
         best.health -= spec.damage;
         this.effects.blood(best.pos);
@@ -92,7 +96,7 @@ export class Combat {
         }
       }
     }
-    this.effects.muzzleFlash(origin, player.heading);
+    if (player.weapon !== 'fists') this.effects.muzzleFlash(origin, player.heading);
     if (player.weapon === 'shotgun') this.audio.shotgun();
     else if (player.weapon !== 'fists') this.audio.shoot();
     else { this.audio.punch(); player.punch(); }
@@ -112,6 +116,15 @@ export class Combat {
         e.pos.x += Math.cos(want) * 4.2 * dt;
         e.pos.z += -Math.sin(want) * 4.2 * dt;
         city.resolveCollision(e.pos, 0.7);
+      } else {
+        // In range: strafe sideways so the player can't just stand
+        // still and trade shots with a statue. Direction flips every
+        // couple of seconds.
+        e.strafeTimer -= dt;
+        if (e.strafeTimer <= 0) { e.strafeTimer = 2 + Math.random() * 2; e.strafeDir *= -1; }
+        e.pos.x += -Math.sin(want) * e.strafeDir * 1.6 * dt;
+        e.pos.z += -Math.cos(want) * e.strafeDir * 1.6 * dt;
+        city.resolveCollision(e.pos, 0.7);
       }
       e.shootTimer -= dt;
       if (e.shootTimer <= 0 && dist < 45) {
@@ -119,7 +132,10 @@ export class Combat {
         const origin = e.pos.clone(); origin.y = 1.4;
         const target = player.pos.clone(); target.y = 1.3;
         const dir = target.sub(origin).normalize();
-        const hit = Math.random() < 0.45;
+        // Accuracy falls off with range: point-blank is dangerous, a
+        // potshot from across the street mostly misses.
+        const acc = dist < 15 ? 0.55 : dist < 30 ? 0.4 : 0.25;
+        const hit = Math.random() < acc;
         this.effects.tracer(origin, origin.clone().addScaledVector(dir, Math.min(dist, 45)));
         this.audio.shoot();
         if (hit && player.health > 0) {

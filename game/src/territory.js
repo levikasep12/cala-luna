@@ -16,13 +16,21 @@ export class Territory {
 
   holds(id) { return this.held.has(id); }
 
+  // Back to a new game: no districts held, no cut pending.
+  reset() {
+    this.held = new Set();
+    this.cutTimer = 0;
+  }
+
   capture(id) {
     if (this.held.has(id)) return;
     const d = DISTRICTS.find((x) => x.id === id);
     if (!d) return;
     this.held.add(id);
+    // Taking a district patches Luz up: the crew holds the ground now.
+    this.game.player.heal(25);
     this.game.hud.showBanner(`${d.name} IS YOURS`);
-    this.game.hud.say('Luz', `${d.name} flies our colors now. The ${d.rival} won't be back.`);
+    this.game.hud.say('Luz', `${d.name} flies our colors now. The ${d.rival} won't be back — and the crew patched me up.`);
     this.game.audio.missionPass();
     if (this.held.size === DISTRICTS.length) {
       this.game.player.cash += 10000;
@@ -31,13 +39,18 @@ export class Territory {
     this.game.saveGame();
   }
 
-  // Districts pay a cut every two minutes of play.
+  // Districts pay a cut every two minutes of play. Rich districts pay
+  // more: Downtown's $400 beats Old Town's $200, so the map order
+  // matters when Luz picks her next fight.
   update(dt) {
     if (this.held.size === 0) return;
     this.cutTimer += dt;
     if (this.cutTimer >= 120) {
       this.cutTimer = 0;
-      const cut = this.held.size * 250;
+      const cut = [...this.held].reduce((sum, id) => {
+        const d = DISTRICTS.find((x) => x.id === id);
+        return sum + (d ? d.cut : 250);
+      }, 0);
       this.game.player.cash += cut;
       this.game.hud.say('Marco', `District cut's in: $${cut}. The streets pay rent now.`);
     }

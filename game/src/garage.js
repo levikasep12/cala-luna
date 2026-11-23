@@ -3,7 +3,10 @@
 // take one back out. The collection shows in the pause stats.
 
 import { Vehicle } from './vehicles.js';
-import { SHOPS } from './config.js';
+import { SHOPS, VEHICLES } from './config.js';
+
+// Six bays, six cars: the collection has a roof, and the roof is visible.
+const GARAGE_CAPACITY = 6;
 
 export class Garage {
   constructor(game) {
@@ -11,6 +14,9 @@ export class Garage {
     this.stored = []; // vehicle types, in the order stored
     this.at = SHOPS.garage.at;
   }
+
+  // Back to a new game: an empty garage.
+  reset() { this.stored = []; }
 
   nearGarage(player) {
     return Math.hypot(player.pos.x - this.at[0], player.pos.z - this.at[1]) < 14;
@@ -23,6 +29,10 @@ export class Garage {
     const type = p.car.type;
     if (type === 'police' || type === 'swat') {
       g.hud.say('Marco', 'I am NOT storing a cop car, Luz. Lose it.');
+      return false;
+    }
+    if (this.stored.length >= GARAGE_CAPACITY) {
+      g.hud.say('Marco', `Garage is full — ${GARAGE_CAPACITY} cars. Take one out before you park another.`);
       return false;
     }
     this.stored.push(type);
@@ -52,6 +62,7 @@ export class Garage {
 
   statusText() {
     if (this.stored.length === 0) return 'Garage: empty — steal something worth keeping';
-    return `Garage (${this.stored.length}): ${this.stored.join(', ')}`;
+    const names = this.stored.map((t) => (VEHICLES[t] ? VEHICLES[t].name : t));
+    return `Garage (${this.stored.length}/${GARAGE_CAPACITY}): ${names.join(', ')}`;
   }
 }

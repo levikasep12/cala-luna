@@ -30,6 +30,12 @@ export class Save {
     try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
   }
 
+  // True when a save exists, without parsing it: the title screen uses
+  // this to decide whether CONTINUE shows at all.
+  static exists() {
+    try { return localStorage.getItem(SAVE_KEY) !== null; } catch { return false; }
+  }
+
   static statsText(stats, extra) {
     const rows = [
       ['Cash earned', '$' + (stats.cashEarned || 0).toLocaleString()],
@@ -40,6 +46,7 @@ export class Save {
       ['Stunt jumps', stats.stunts || 0],
       ['Cars stolen', stats.carsStolen || 0],
       ['Rivals taken down', stats.kills || 0],
+      ['Distance driven', (stats.distanceKm || 0).toFixed(1) + ' km'],
       ['Times busted', stats.busted || 0],
       ['Times wasted', stats.wasted || 0],
       ['Play time', Save._fmtTime(stats.playSeconds || 0)],

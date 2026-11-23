@@ -11,19 +11,29 @@ export class Crew {
     this.recruit('marco'); // Marco joins in the intro
   }
 
-  recruit(id) {
+  recruit(id, silent = false) {
     const def = CREW.find((c) => c.id === id);
     if (!def || this.members[id]) return;
     this.members[id] = { def, readyIn: 0 };
     // The HUD may not exist yet when the constructor recruits Marco.
-    if (!this.game.hud) return;
+    if (!this.game.hud || silent) return;
     this.game.hud.say(def.name.split('"')[1] || def.name, `I'm in, Luz. ${def.ability} — say the word.`);
     this.game.hud.showBanner(`${def.name.split(' ')[0].toUpperCase()} JOINED THE CREW`);
+  }
+
+  // Back to a new game: Marco only, as in the intro, no fanfare.
+  reset() {
+    this.members = {};
+    this.recruit('marco', true);
   }
 
   get count() { return Object.keys(this.members).length; }
 
   readyAbility() {
+    // Heat first: if the CLPD is all over Luz, Ines' star wipe beats
+    // a repair, even when Marco is also ready.
+    if (this.game.police && this.game.police.stars >= 3
+      && this.members.ines && this.members.ines.readyIn <= 0) return 'ines';
     for (const id of Object.keys(this.members)) {
       if (this.members[id].readyIn <= 0) return id;
     }

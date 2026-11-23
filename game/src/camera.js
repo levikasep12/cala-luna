@@ -14,11 +14,44 @@ export class Camera {
     this.lookAt = new THREE.Vector3();
     this.shake = 0;
     this.mode = 'chase'; // chase | vista
+    this.distBoost = 0;   // extra pull-back (shots and camera views)
+    this.heightBoost = 0;
+    this.viewIndex = 1;   // 0 close, 1 standard, 2 far
+    this.views = [
+      { dist: -3, height: -1, label: 'CLOSE' },
+      { dist: 0, height: 0, label: 'STANDARD' },
+      { dist: 6, height: 2.5, label: 'FAR' },
+    ];
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
+  }
+
+  // Cycle the chase distance (C key). Returns the new view's label
+  // for the HUD hint.
+  cycleView() {
+    this.viewIndex = (this.viewIndex + 1) % this.views.length;
+    const v = this.views[this.viewIndex];
+    this.distBoost = v.dist;
+    this.heightBoost = v.height;
+    return v.label;
+  }
+
+  // Jump the camera to its chase spot at once: no cross-map swoop
+  // when the game starts, the player respawns, or a shot is staged.
+  snapTo(targetPos, targetHeading) {
+    const back = targetHeading + Math.PI + this.yaw;
+    const d = 11;
+    this.pos.set(
+      targetPos.x + Math.cos(back) * d * Math.cos(this.pitch),
+      targetPos.y + 5 + Math.sin(this.pitch) * d * 0.6,
+      targetPos.z - Math.sin(back) * d * Math.cos(this.pitch),
+    );
+    this.lookAt.set(targetPos.x, targetPos.y + 2.2, targetPos.z);
+    this.camera.position.copy(this.pos);
+    this.camera.lookAt(this.lookAt);
   }
 
   orbit(dx, dy) {
@@ -40,8 +73,8 @@ export class Camera {
   update(dt, targetPos, targetHeading, speedKmh, inCar) {
     // Chase: behind the target's heading, blended toward the orbit yaw.
     const back = targetHeading + Math.PI + this.yaw;
-    const wantDist = (inCar ? 12 + Math.min(6, speedKmh / 30) : 9) + (this.distBoost || 0);
-    const wantHeight = (inCar ? 5.2 : 4.4) + (this.heightBoost || 0);
+    const wantDist = (inCar ? 12 + Math.min(6, speedKmh / 30) : 9) + this.distBoost;
+    const wantHeight = (inCar ? 5.2 : 4.4) + this.heightBoost;
     const want = new THREE.Vector3(
       targetPos.x + Math.cos(back) * wantDist * Math.cos(this.pitch),
       targetPos.y + wantHeight + Math.sin(this.pitch) * wantDist * 0.6,

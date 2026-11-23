@@ -14,11 +14,11 @@ export const WORLD = {
 };
 
 export const DISTRICTS = [
-  { id: 'oldtown',  name: 'OLD TOWN',  x0: -330, z0: -330, x1: -90,  z1: 90,  color: '#e8b04b', rival: 'Los Lobos' },
-  { id: 'downtown', name: 'DOWNTOWN',  x0: -90,  z0: -330, x1: 150,  z1: 30,  color: '#7fb3e8', rival: 'The Kings' },
-  { id: 'marina',   name: 'MARINA',    x0: 150,  z0: -180, x1: 330,  z1: 300, color: '#7ee8c0', rival: 'Harbor Boys' },
-  { id: 'hills',    name: 'THE HILLS', x0: -90,  z0: 30,   x1: 150,  z1: 300, color: '#c99be8', rival: 'Hilltop Crew' },
-  { id: 'docks',    name: 'THE DOCKS', x0: -330, z0: 90,   x1: -90,  z1: 300, color: '#e87f7f', rival: 'Dock Rats' },
+  { id: 'oldtown',  name: 'OLD TOWN',  x0: -330, z0: -330, x1: -90,  z1: 90,  color: '#e8b04b', rival: 'Los Lobos',      cut: 200 },
+  { id: 'downtown', name: 'DOWNTOWN',  x0: -90,  z0: -330, x1: 150,  z1: 30,  color: '#7fb3e8', rival: 'The Kings',      cut: 400 },
+  { id: 'marina',   name: 'MARINA',    x0: 150,  z0: -180, x1: 330,  z1: 300, color: '#7ee8c0', rival: 'Harbor Boys',    cut: 350 },
+  { id: 'hills',    name: 'THE HILLS', x0: -90,  z0: 30,   x1: 150,  z1: 300, color: '#c99be8', rival: 'Hilltop Crew',   cut: 300 },
+  { id: 'docks',    name: 'THE DOCKS', x0: -330, z0: 90,   x1: -90,  z1: 300, color: '#e87f7f', rival: 'Dock Rats',      cut: 250 },
 ];
 
 export const VEHICLES = {
@@ -29,10 +29,14 @@ export const VEHICLES = {
   police:  { name: 'CLPD Interceptor', topSpeed: 50, accel: 22, grip: 10, color: 0x1c2733, seats: 4 },
   swat:    { name: 'SWAT Van',       topSpeed: 42, accel: 18, grip: 9,   color: 0x14181f, seats: 6 },
   coupe:   { name: 'Solstice Coupe', topSpeed: 47, accel: 20, grip: 9.5, color: 0x2f6fd0, seats: 2 },
+  muscle:  { name: 'Barracuda SS',   topSpeed: 52, accel: 22, grip: 9,   color: 0x7a2fd0, seats: 2 },
 };
 
 export const WEAPONS = {
-  fists:   { name: 'FISTS',   damage: 12, range: 2.4, rate: 0.45, auto: false, ammo: Infinity, price: 0 },
+  // Fists hit once per swing (the old code landed every punch twice,
+  // once through the hitscan and once through a melee loop in main.js),
+  // so their damage is set for three punches per rival, not five.
+  fists:   { name: 'FISTS',   damage: 20, range: 2.4, rate: 0.45, auto: false, ammo: Infinity, price: 0 },
   pistol:  { name: 'PISTOL',  damage: 25, range: 60,  rate: 0.28, auto: false, ammo: 120, price: 500 },
   shotgun: { name: 'SHOTGUN', damage: 18, range: 26,  rate: 0.8,  auto: false, ammo: 40,  price: 1500, pellets: 6 },
   rifle:   { name: 'RIFLE',   damage: 34, range: 90,  rate: 0.12, auto: true,  ammo: 200, price: 3500 },
@@ -48,9 +52,17 @@ export const WANTED = {
 };
 
 export const CREW = [
-  { id: 'marco', name: 'Marco "Wrench" Diaz', role: 'Mechanic', ability: 'Field Repair', desc: 'Instantly repairs your car to full health.', cooldown: 45 },
-  { id: 'ines',  name: 'Ines "Ghost" Kato',   role: 'Hacker',   ability: 'Ghost Signal', desc: 'Wipes one wanted star, right now.', cooldown: 60 },
+  { id: 'marco', name: 'Marco "Wrench" Diaz', role: 'Mechanic', ability: 'Field Repair', desc: 'Instantly repairs your car to full health.', cooldown: 40 },
+  { id: 'ines',  name: 'Ines "Ghost" Kato',   role: 'Hacker',   ability: 'Ghost Signal', desc: 'Wipes one wanted star, right now.', cooldown: 50 },
 ];
+
+// Iron & Oak shelf prices. Weapon prices live in WEAPONS; these are the
+// consumables, kept here so the shop never hard-codes a dollar figure.
+export const SHOP = {
+  armorPrice: 800,
+  medkitPrice: 150,
+  medkitHeal: 50,
+};
 
 // The story: 8 jobs. Each step: drive to a marker, do the thing, get paid.
 export const STORY = [
@@ -101,12 +113,14 @@ export const STORY = [
 export const RACES = [
   { id: 'sprint-1', name: 'Crescent Sprint', entry: 200, prize: 1200, checkpoints: [[-240, -240], [0, -240], [240, -240], [240, 0], [240, 240]] },
   { id: 'sprint-2', name: 'Bay Loop', entry: 500, prize: 3000, checkpoints: [[-240, 240], [-240, -240], [240, -240], [240, 240], [0, 240]] },
+  { id: 'sprint-3', name: 'Midnight Loop', entry: 800, prize: 5000, checkpoints: [[-240, -240], [240, -240], [240, 240], [-240, 240], [-240, 0], [0, 0]] },
 ];
 
 export const STUNTS = [
   { id: 'jump-1', name: 'Harbor Leap', at: [270, 180], ramp: [270, 150] },
   { id: 'jump-2', name: 'Hilltop Flight', at: [60, 270], ramp: [60, 240] },
   { id: 'jump-3', name: 'Downtown Drop', at: [120, -270], ramp: [120, -240] },
+  { id: 'jump-4', name: 'Marina Jump', at: [240, 270], ramp: [240, 240] },
 ];
 
 export const SHOPS = {
@@ -118,6 +132,10 @@ export const SHOPS = {
 export const PLAYER = {
   walkSpeed: 6, runSpeed: 10, jumpSpeed: 8, maxHealth: 100, maxArmor: 100,
   startPos: [-30, 120], startCash: 250,
+  // Sprint stamina: drains while sprinting, refills when not. Sprint is
+  // blocked at 0 until the bar recovers past 25, so a flat-out run
+  // across the map needs pacing, not just a held Shift key.
+  maxStamina: 100, staminaDrain: 25, staminaRegen: 18, staminaRefill: 25,
 };
 
 export const SAVE_KEY = 'cala-luna-save-v1';

@@ -14,10 +14,15 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 #wanted-stars { font-size: 26px; letter-spacing: 4px; color: #ffd166; text-shadow: 0 0 10px rgba(255,180,0,.8); }
 #wanted-stars.hot { color: #ff5a4e; animation: blink .5s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .45; } }
-#health-bar, #armor-bar { position: relative; width: 170px; height: 12px; margin-top: 6px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; }
-#health-fill, #armor-fill { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg, #7ee787, #2da44e); }
+#health-bar, #armor-bar, #stamina-bar { position: relative; width: 170px; height: 12px; margin-top: 6px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; }
+#health-fill, #armor-fill, #stamina-fill { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg, #7ee787, #2da44e); }
 #armor-fill { background: linear-gradient(90deg, #79c0ff, #1f6feb); }
-#health-bar span, #armor-bar span { position: absolute; right: 5px; top: -1px; font-size: 9px; letter-spacing: 2px; color: #fff; }
+#stamina-fill { background: linear-gradient(90deg, #ffd166, #ffb703); }
+#health-bar span, #armor-bar span, #stamina-bar span { position: absolute; right: 5px; top: -1px; font-size: 9px; letter-spacing: 2px; color: #fff; }
+#noscript { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: #0b0e14; color: #f2ead8; font-size: 18px; text-align: center; padding: 40px; }
+@media (prefers-reduced-motion: reduce) {
+  #wanted-stars.hot { animation: none; }
+}
 #hud-objective { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); min-width: 380px; max-width: 620px; text-align: center; background: rgba(10,12,18,.62); border: 1px solid rgba(255,209,102,.35); border-radius: 8px; padding: 8px 18px; }
 #objective-label { font-size: 10px; letter-spacing: 5px; color: #ffd166; }
 #objective-text { font-size: 16px; font-weight: 600; margin-top: 2px; }
@@ -28,6 +33,7 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 #speed-unit { font-size: 11px; letter-spacing: 3px; color: #ffd166; }
 #vehicle-name { font-size: 12px; letter-spacing: 1px; color: #cfc6ad; margin-top: 2px; }
 #hud-weapon { position: absolute; right: 24px; bottom: 118px; font-size: 14px; letter-spacing: 2px; text-shadow: 0 2px 5px rgba(0,0,0,.8); }
+#hud-weapon.low, #hud-weapon.low #weapon-name { color: #ff5a4e; }
 #weapon-name { color: #ffd166; font-weight: 700; }
 #hud-crew { position: absolute; left: 22px; top: 92px; font-size: 13px; letter-spacing: 1px; background: rgba(10,12,18,.55); padding: 7px 12px; border-radius: 6px; }
 #dialogue-bar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); max-width: 640px; background: rgba(8,10,15,.72); border-radius: 8px; padding: 10px 18px; font-size: 15px; text-align: center; }

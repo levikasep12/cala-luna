@@ -23,7 +23,7 @@ export class Input {
       if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keysDown.delete(e.code));
-    window.addEventListener('blur', () => { this.keysDown.clear(); this.dragging = false; });
+    window.addEventListener('blur', () => { this.keysDown.clear(); this.pressedQueue.clear(); this.dragging = false; });
     window.addEventListener('mousedown', (e) => {
       if (e.target.closest('button')) return;
       this.mouseDown = true;
@@ -41,14 +41,15 @@ export class Input {
   }
 
   down(code) { return this.keysDown.has(code); }
+  sprint() { return this.down('ShiftLeft') || this.down('ShiftRight'); }
   pressed(code) {
     if (this.pressedQueue.has(code)) { this.pressedQueue.delete(code); return true; }
     return false;
   }
-  // WASD axes: x = strafe right, y = forward
+  // WASD (or arrow keys) axes: x = strafe right, y = forward
   axes() {
-    const x = (this.down('KeyD') ? 1 : 0) - (this.down('KeyA') ? 1 : 0);
-    const y = (this.down('KeyW') ? 1 : 0) - (this.down('KeyS') ? 1 : 0);
+    const x = (this.down('KeyD') || this.down('ArrowRight') ? 1 : 0) - (this.down('KeyA') || this.down('ArrowLeft') ? 1 : 0);
+    const y = (this.down('KeyW') || this.down('ArrowUp') ? 1 : 0) - (this.down('KeyS') || this.down('ArrowDown') ? 1 : 0);
     return { x, y };
   }
   consumeMouseClick() {

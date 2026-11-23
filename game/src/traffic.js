@@ -4,9 +4,10 @@
 
 import { Vehicle } from './vehicles.js';
 import { WORLD } from './config.js';
-import { makeRng, pick } from './random.js';
+import { makeRng, pick, weighted } from './random.js';
 
-const TRAFFIC_TYPES = ['sedan', 'sedan', 'coupe', 'taxi', 'truck'];
+// [type, weight]: sedans dominate the roads, the muscle car is rare.
+const TRAFFIC_TYPES = [['sedan', 5], ['coupe', 2], ['taxi', 2], ['truck', 1], ['muscle', 1]];
 
 export class Traffic {
   constructor(scene, city, seed) {
@@ -34,7 +35,7 @@ export class Traffic {
     this.spawnAt(
       alongX ? x : sx, alongX ? sz : z,
       alongX ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? -Math.PI / 2 : Math.PI / 2),
-      pick(rng, TRAFFIC_TYPES),
+      weighted(rng, TRAFFIC_TYPES),
     );
   }
 
@@ -45,6 +46,7 @@ export class Traffic {
     car.driver = 'traffic';
     car.cruise = 10 + rng() * 6;
     car.nextTurn = 4 + rng() * 8;
+    car.turnTarget = null; // heading a turn is easing toward, or null
     car.lane = pick(rng, [-3.2, 3.2]);
     this.cars.push(car);
     return car;
@@ -66,21 +68,32 @@ export class Traffic {
     }
     for (const car of this.cars) {
       car.nextTurn -= dt;
-      // Gentle steering: stay near the lane centre of the current street.
       const near = city.nearestStreet(car.pos.x, car.pos.z);
-      const alongX = Math.abs(Math.sin(car.heading)) < 0.7;
       let steer = 0;
-      if (alongX) {
-        const want = near.z + car.lane;
-        steer = Math.max(-1, Math.min(1, (want - car.pos.z) * 0.08)) * (Math.cos(car.heading) > 0 ? 1 : -1);
+      if (car.turnTarget !== null && car.turnTarget !== undefined) {
+        // Finishing a 90° turn: steer toward the target heading and
+        // only resume lane-keeping once the car is lined up.
+        let diff = car.turnTarget - car.heading;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        steer = Math.max(-1, Math.min(1, diff * 2.2));
+        if (Math.abs(diff) < 0.06) car.turnTarget = null;
       } else {
-        const want = near.x + car.lane;
-        steer = Math.max(-1, Math.min(1, (want - car.pos.x) * 0.08)) * (Math.sin(car.heading) > 0 ? -1 : 1);
-      }
-      if (car.nextTurn <= 0) {
-        car.nextTurn = 5 + this.rng() * 9;
-        // Turn at the next intersection: rotate the heading target by 90°.
-        car.heading += (this.rng() < 0.5 ? 1 : -1) * Math.PI / 2;
+        // Gentle steering: stay near the lane centre of the current street.
+        const alongX = Math.abs(Math.sin(car.heading)) < 0.7;
+        if (alongX) {
+          const want = near.z + car.lane;
+          steer = Math.max(-1, Math.min(1, (want - car.pos.z) * 0.08)) * (Math.cos(car.heading) > 0 ? 1 : -1);
+        } else {
+          const want = near.x + car.lane;
+          steer = Math.max(-1, Math.min(1, (want - car.pos.x) * 0.08)) * (Math.sin(car.heading) > 0 ? -1 : 1);
+        }
+        if (car.nextTurn <= 0) {
+          car.nextTurn = 5 + this.rng() * 9;
+          // Turn at the next intersection: ease into the new heading
+          // over the next second instead of snapping 90° at once.
+          car.turnTarget = car.heading + (this.rng() < 0.5 ? 1 : -1) * Math.PI / 2;
+        }
       }
       const throttle = car.speed < car.cruise ? 0.6 : 0;
       car.drive(dt, throttle, steer, false);

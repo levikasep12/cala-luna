@@ -71,6 +71,8 @@ export class Audio {
   missionFail() { [330, 262, 196].forEach((f, i) => setTimeout(() => this._tone(f, 0.22, 'sawtooth', 0.08), i * 150)); }
   wantedUp() { this._tone(440, 0.12, 'square', 0.08, 660); }
   horn() { this._tone(370, 0.25, 'square', 0.07); this._tone(466, 0.25, 'square', 0.07); }
+  skid() { this._noise(0.25, 0.12, 900); }
+  countdown() { [660, 660, 990].forEach((f, i) => setTimeout(() => this._tone(f, 0.12, 'square', 0.09), i * 200)); }
 
   startEngine() {
     if (!this.ctx || this.engineOsc) return;
@@ -90,6 +92,16 @@ export class Audio {
     const target = driving ? 0.05 + speedNorm * 0.05 : 0.0;
     this.engineGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
     this.engineOsc.frequency.setTargetAtTime(50 + speedNorm * 130, this.ctx.currentTime, 0.1);
+  }
+
+  // Stop the engine hum for good (quit to title). startEngine can
+  // bring it back; without this the oscillator ran forever.
+  stopEngine() {
+    if (!this.engineOsc) return;
+    try { this.engineOsc.stop(); } catch { /* already stopped */ }
+    this.engineOsc.disconnect();
+    this.engineOsc = null;
+    this.engineGain = null;
   }
 
   startMusic() {
