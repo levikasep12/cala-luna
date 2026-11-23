@@ -1,12 +1,32 @@
 // CALA LUNA — save: localStorage persistence and the stats record.
 // Cash, mission progress, garage, territory, crew and lifetime stats
 // all survive a refresh. A save from an older build is ignored safely.
+// One backup slot holds the last good save beside the live one, so a
+// crash mid-write never costs the whole campaign: load falls back to
+// the backup and restores it as the live save.
 
 import { SAVE_KEY } from './config.js';
+
+const SAVE_VERSION = 1;
+const MAX_JOB_INDEX = 8; // the story has 8 jobs; past that is corrupt
 
 export class Save {
   // One backup slot: the last good save, kept beside the live one.
   static _bakKey() { return SAVE_KEY + ':bak'; }
+
+  // localStorage reads and writes, each guarded: a thrown quota or a
+  // blocked store reads as nothing, never as a crash.
+  static _read(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  static _write(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  }
+
+  static _remove(key) {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  }
 
   // Parse + sanity-check one stored blob. A save with impossible
   // numbers (NaN cash, a job index past the story) is corrupt, not a
@@ -15,9 +35,9 @@ export class Save {
     if (!raw) return null;
     try {
       const data = JSON.parse(raw);
-      if (!data || data.version !== 1) return null;
+      if (!data || data.version !== SAVE_VERSION) return null;
       if (data.cash !== undefined && (!Number.isFinite(data.cash) || data.cash < 0)) return null;
-      if (data.jobIndex !== undefined && (!Number.isInteger(data.jobIndex) || data.jobIndex < 0 || data.jobIndex > 8)) return null;
+      if (data.jobIndex !== undefined && (!Number.isInteger(data.jobIndex) || data.jobIndex < 0 || data.jobIndex > MAX_JOB_INDEX)) return null;
       return data;
     } catch {
       return null;
@@ -25,46 +45,35 @@ export class Save {
   }
 
   static load() {
-    try {
-      const data = Save._parse(localStorage.getItem(SAVE_KEY));
-      if (data) return data;
-      // Primary corrupt or missing: fall back to the backup and
-      // restore it as the live save, so the next load is clean.
-      const bak = Save._parse(localStorage.getItem(Save._bakKey()));
-      if (bak) {
-        try { localStorage.setItem(SAVE_KEY, JSON.stringify(bak)); } catch { /* backup still stands */ }
-        return bak;
-      }
-      return null;
-    } catch {
-      return null;
+    const data = Save._parse(Save._read(SAVE_KEY));
+    if (data) return data;
+    // Primary corrupt or missing: fall back to the backup and restore
+    // it as the live save, so the next load is clean.
+    const bak = Save._parse(Save._read(Save._bakKey()));
+    if (bak) {
+      Save._write(SAVE_KEY, JSON.stringify(bak));
+      return bak;
     }
+    return null;
   }
 
   static store(data) {
-    try {
-      // Keep the previous good save as the backup before overwriting:
-      // a crash mid-write used to cost the whole campaign.
-      const prev = localStorage.getItem(SAVE_KEY);
-      if (prev && Save._parse(prev)) {
-        try { localStorage.setItem(Save._bakKey(), prev); } catch { /* backup is best-effort */ }
-      }
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, ...data }));
-      return true;
-    } catch {
-      return false;
-    }
+    // Keep the previous good save as the backup before overwriting:
+    // a crash mid-write used to cost the whole campaign.
+    const prev = Save._read(SAVE_KEY);
+    if (prev && Save._parse(prev)) Save._write(Save._bakKey(), prev);
+    return Save._write(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, ...data }));
   }
 
   static clear() {
-    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
-    try { localStorage.removeItem(Save._bakKey()); } catch { /* ignore */ }
+    Save._remove(SAVE_KEY);
+    Save._remove(Save._bakKey());
   }
 
   // True when a save exists, without parsing it: the title screen uses
   // this to decide whether CONTINUE shows at all.
   static exists() {
-    try { return localStorage.getItem(SAVE_KEY) !== null; } catch { return false; }
+    return Save._read(SAVE_KEY) !== null;
   }
 
   static statsText(stats, extra) {

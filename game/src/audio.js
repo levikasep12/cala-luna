@@ -1,5 +1,9 @@
 // CALA LUNA — audio: all sound is synthesized with WebAudio. No audio files.
 // Engine hum, sirens, gunshots, pickups, UI clicks and a bassline loop.
+// Two primitives do all the work — a tone (an oscillator with an
+// envelope) and noise (a decaying buffer through a filter) — and the
+// jingles are one table of note runs played through a single arpeggio
+// helper, so every fanfare is four numbers, not four callbacks.
 
 export class Audio {
   constructor() {
@@ -10,6 +14,7 @@ export class Audio {
     this.musicTimer = null;
     this.musicStep = 0;
     this.rotorOsc = null; // helicopter rotor loop (null when no heli)
+    this.rotorLfo = null;
     this.rotorOn = false;
   }
 
@@ -29,6 +34,8 @@ export class Audio {
     return this.muted;
   }
 
+  // One oscillator with a decaying gain envelope, optionally sliding
+  // down (or up) in pitch across its life.
   _tone(freq, dur, type = 'sine', vol = 0.15, slideTo = null) {
     if (!this.ctx || this.muted) return;
     const t = this.ctx.currentTime;
@@ -43,6 +50,8 @@ export class Audio {
     o.start(t); o.stop(t + dur);
   }
 
+  // A burst of filtered noise with a decaying envelope: gunshots,
+  // crashes, skids, the hi-hat tick in the music loop.
   _noise(dur, vol = 0.2, filterFreq = 1000) {
     if (!this.ctx || this.muted) return;
     const t = this.ctx.currentTime;
@@ -61,33 +70,54 @@ export class Audio {
     src.start(t);
   }
 
+  // A run of notes, one every stepMs, all the same shape.
+  _arp(notes, stepMs, dur, type, vol) {
+    notes.forEach((f, i) => setTimeout(() => this._tone(f, dur, type, vol), i * stepMs));
+  }
+
   click() { this._tone(880, 0.06, 'square', 0.06); }
   pickup() { this._tone(660, 0.09, 'sine', 0.14); setTimeout(() => this._tone(990, 0.12, 'sine', 0.14), 70); }
-  cash() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this._tone(f, 0.12, 'triangle', 0.12), i * 80)); }
+  cash() { this._arp([523, 659, 784, 1047], 80, 0.12, 'triangle', 0.12); }
   shoot() { this._noise(0.14, 0.28, 2200); this._tone(160, 0.1, 'square', 0.12, 60); }
   shotgun() { this._noise(0.3, 0.4, 1200); this._tone(110, 0.2, 'square', 0.16, 45); }
   punch() { this._noise(0.08, 0.18, 700); }
   crash() { this._noise(0.35, 0.3, 500); }
   sirenBlip() { this._tone(700, 0.16, 'sine', 0.05, 950); }
-  missionPass() { [392, 523, 659, 784].forEach((f, i) => setTimeout(() => this._tone(f, 0.16, 'triangle', 0.14), i * 110)); }
-  missionFail() { [330, 262, 196].forEach((f, i) => setTimeout(() => this._tone(f, 0.22, 'sawtooth', 0.08), i * 150)); }
+  missionPass() { this._arp([392, 523, 659, 784], 110, 0.16, 'triangle', 0.14); }
+  missionFail() { this._arp([330, 262, 196], 150, 0.22, 'sawtooth', 0.08); }
   wantedUp() { this._tone(440, 0.12, 'square', 0.08, 660); }
   horn() { this._tone(370, 0.25, 'square', 0.07); this._tone(466, 0.25, 'square', 0.07); }
   skid() { this._noise(0.25, 0.12, 900); }
-  countdown() { [660, 660, 990].forEach((f, i) => setTimeout(() => this._tone(f, 0.12, 'square', 0.09), i * 200)); }
+  countdown() { this._arp([660, 660, 990], 200, 0.12, 'square', 0.09); }
   // Two low buzzes: a purchase that didn't happen (broke, plated, pouch full).
   denied() { this._tone(140, 0.12, 'square', 0.08); setTimeout(() => this._tone(110, 0.16, 'square', 0.08), 110); }
 
+  // A looping oscillator through a lowpass filter into a gain: the
+  // shared shape of the engine hum and the rotor thump.
+  _filteredLoop(type, freq, filterFreq, gainVal) {
+    const o = this.ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = freq;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = filterFreq;
+    const g = this.ctx.createGain();
+    g.gain.value = gainVal;
+    o.connect(f).connect(g).connect(this.ctx.destination);
+    return { osc: o, gain: g };
+  }
+
+  // Stop and unplug one oscillator. The try/catch is for a loop that
+  // was already stopped — stopping twice throws.
+  _stopOsc(osc) {
+    try { osc.stop(); } catch { /* already stopped */ }
+    osc.disconnect();
+  }
+
   startEngine() {
     if (!this.ctx || this.engineOsc) return;
-    this.engineOsc = this.ctx.createOscillator();
-    this.engineOsc.type = 'sawtooth';
-    this.engineOsc.frequency.value = 55;
-    this.engineGain = this.ctx.createGain();
-    this.engineGain.gain.value = 0.0;
-    const f = this.ctx.createBiquadFilter();
-    f.type = 'lowpass'; f.frequency.value = 320;
-    this.engineOsc.connect(f).connect(this.engineGain).connect(this.ctx.destination);
+    const loop = this._filteredLoop('sawtooth', 55, 320, 0.0);
+    this.engineOsc = loop.osc;
+    this.engineGain = loop.gain;
     this.engineOsc.start();
   }
 
@@ -102,8 +132,7 @@ export class Audio {
   // bring it back; without this the oscillator ran forever.
   stopEngine() {
     if (!this.engineOsc) return;
-    try { this.engineOsc.stop(); } catch { /* already stopped */ }
-    this.engineOsc.disconnect();
+    this._stopOsc(this.engineOsc);
     this.engineOsc = null;
     this.engineGain = null;
   }
@@ -113,33 +142,24 @@ export class Audio {
   // leaves; the main loop drives it from police.heli.
   startRotor() {
     if (!this.ctx || this.rotorOsc) return;
-    const o = this.ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.value = 48;
-    const g = this.ctx.createGain();
-    g.gain.value = 0.035;
+    const loop = this._filteredLoop('sawtooth', 48, 220, 0.035);
     const lfo = this.ctx.createOscillator();
     lfo.type = 'sine';
     lfo.frequency.value = 11;
     const lfoGain = this.ctx.createGain();
     lfoGain.gain.value = 0.03;
-    lfo.connect(lfoGain).connect(g.gain);
-    const f = this.ctx.createBiquadFilter();
-    f.type = 'lowpass'; f.frequency.value = 220;
-    o.connect(f).connect(g).connect(this.ctx.destination);
-    o.start();
+    lfo.connect(lfoGain).connect(loop.gain.gain);
+    loop.osc.start();
     lfo.start();
-    this.rotorOsc = o;
+    this.rotorOsc = loop.osc;
     this.rotorLfo = lfo;
     this.rotorOn = true;
   }
 
   stopRotor() {
     if (!this.rotorOsc) return;
-    try { this.rotorOsc.stop(); } catch { /* already stopped */ }
-    try { this.rotorLfo.stop(); } catch { /* already stopped */ }
-    this.rotorOsc.disconnect();
-    this.rotorLfo.disconnect();
+    this._stopOsc(this.rotorOsc);
+    this._stopOsc(this.rotorLfo);
     this.rotorOsc = null;
     this.rotorLfo = null;
     this.rotorOn = false;

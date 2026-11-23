@@ -1,21 +1,28 @@
 // CALA LUNA — effects: particles, tracers, muzzle flashes, smoke and
-// explosions. Short-lived meshes pooled and recycled every frame.
+// explosions. Short-lived meshes, pooled and recycled every frame.
+// Everything here is a list of dying things: the four lists (particles,
+// tracers, flashes, rings) all age the same way, so one reaper walks
+// them all — each list just says what its members do while they live.
 
 import * as THREE from 'three';
+
+const MAX_PARTICLES = 300; // a long firefight must not grow the list unbounded
+const MAX_TRACERS = 40;
+const MAX_FLASHES = 12; // a rifle on full-auto must not grow the list unbounded
+const PARTICLE_GRAVITY = 6;
 
 export class Effects {
   constructor(scene) {
     this.scene = scene;
     this.particles = []; // {mesh, vel, life, maxLife}
-    this.tracers = [];
-    this.flashes = [];
-    this.rings = []; // shockwave rings from explosions
+    this.tracers = []; // {mesh, life}
+    this.flashes = []; // {mesh, life}
+    this.rings = []; // {mesh, life, maxLife} — shockwave rings from explosions
   }
 
+  // One particle: a small coloured box with a velocity and a lifespan.
   _spawn(pos, color, size, vel, life) {
-    // Cap the live count: a long firefight must not grow the particle
-    // list without bound.
-    if (this.particles.length > 300) return;
+    if (this.particles.length > MAX_PARTICLES) return;
     const m = new THREE.Mesh(
       new THREE.BoxGeometry(size, size, size),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }),
@@ -25,6 +32,7 @@ export class Effects {
     this.particles.push({ mesh: m, vel: vel.clone(), life, maxLife: life });
   }
 
+  // A spray of particles in random directions, fast ones and slow ones.
   burst(pos, color, count = 10, speed = 6, size = 0.35) {
     for (let i = 0; i < count; i++) {
       const v = new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2)
@@ -80,9 +88,7 @@ export class Effects {
   }
 
   muzzleFlash(origin, heading) {
-    // Same cap idea as particles: a rifle on full-auto must not grow
-    // the flash list without bound.
-    if (this.flashes.length > 12) return;
+    if (this.flashes.length > MAX_FLASHES) return;
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.1),
       new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
@@ -100,7 +106,7 @@ export class Effects {
   }
 
   tracer(from, to) {
-    if (this.tracers.length > 40) return;
+    if (this.tracers.length > MAX_TRACERS) return;
     const dir = to.clone().sub(from);
     const len = dir.length();
     const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 4);
@@ -112,54 +118,41 @@ export class Effects {
     this.tracers.push({ mesh: m, life: 0.15 });
   }
 
+  // Age every list: the dead are removed and disposed, the living get
+  // their per-frame behaviour from the tick callback.
   update(dt) {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.life -= dt;
-      if (p.life <= 0) {
-        this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        p.mesh.material.dispose();
-        this.particles.splice(i, 1);
-        continue;
-      }
-      p.vel.y -= 6 * dt;
+    this._reap(this.particles, dt, (p) => {
+      p.vel.y -= PARTICLE_GRAVITY * dt;
       p.mesh.position.addScaledVector(p.vel, dt);
       p.mesh.material.opacity = p.life / p.maxLife;
-    }
-    for (let i = this.tracers.length - 1; i >= 0; i--) {
-      const t = this.tracers[i];
-      t.life -= dt;
-      if (t.life <= 0) {
-        this.scene.remove(t.mesh);
-        t.mesh.geometry.dispose();
-        t.mesh.material.dispose();
-        this.tracers.splice(i, 1);
-      }
-    }
-    for (let i = this.flashes.length - 1; i >= 0; i--) {
-      const f = this.flashes[i];
-      f.life -= dt;
-      if (f.life <= 0) {
-        this.scene.remove(f.mesh);
-        f.mesh.geometry.dispose();
-        f.mesh.material.dispose();
-        this.flashes.splice(i, 1);
-      }
-    }
-    for (let i = this.rings.length - 1; i >= 0; i--) {
-      const r = this.rings[i];
-      r.life -= dt;
-      if (r.life <= 0) {
-        this.scene.remove(r.mesh);
-        r.mesh.geometry.dispose();
-        r.mesh.material.dispose();
-        this.rings.splice(i, 1);
-        continue;
-      }
+    });
+    this._reap(this.tracers, dt);
+    this._reap(this.flashes, dt);
+    this._reap(this.rings, dt, (r) => {
       const k = 1 - r.life / r.maxLife;
       r.mesh.scale.setScalar(1 + k * 9);
       r.mesh.material.opacity = 0.7 * (1 - k);
+    });
+  }
+
+  // Walk a list backwards: count each member's life down, drop the dead,
+  // tick the living. Backwards, so a splice never skips the next member.
+  _reap(list, dt, tick = null) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const item = list[i];
+      item.life -= dt;
+      if (item.life <= 0) {
+        this._discard(item.mesh);
+        list.splice(i, 1);
+        continue;
+      }
+      if (tick) tick(item, dt);
     }
+  }
+
+  _discard(mesh) {
+    this.scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
   }
 }
