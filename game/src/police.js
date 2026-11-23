@@ -1,0 +1,179 @@
+// CALA LUNA — police: the wanted system and the CLPD response.
+// Stars 1-5 escalate: patrols, chases, roadblocks, helicopter, SWAT.
+// Heat cools when the player breaks line of sight; getting caught on
+// foot at low speed means BUSTED.
+
+import * as THREE from 'three';
+import { Vehicle, Helicopter } from './vehicles.js';
+import { WANTED } from './config.js';
+
+export class Police {
+  constructor(scene, city, audio) {
+    this.scene = scene;
+    this.city = city;
+    this.audio = audio;
+    this.stars = 0;
+    this.units = []; // police vehicles
+    this.swat = [];
+    this.heli = null;
+    this.roadblocks = [];
+    this.heatTimer = 0;   // time since last seen
+    this.cooldown = 0;    // counts down while hidden
+    this.spawnTimer = 0;
+    this.sirenTimer = 0;
+    this.busted = false;
+  }
+
+  addStars(n, reason) {
+    const before = this.stars;
+    this.stars = Math.max(0, Math.min(5, this.stars + n));
+    if (this.stars > before) {
+      this.audio.wantedUp();
+      this.heatTimer = 0;
+      this.cooldown = 0;
+    }
+    return this.stars;
+  }
+
+  setStars(n) {
+    this.stars = Math.max(0, Math.min(5, n));
+    this.heatTimer = 0;
+    this.cooldown = 0;
+  }
+
+  clearAll() {
+    for (const u of this.units) u.dispose();
+    for (const u of this.swat) u.dispose();
+    for (const r of this.roadblocks) for (const v of r.cars) v.dispose();
+    if (this.heli) this.heli.dispose();
+    this.units = [];
+    this.swat = [];
+    this.roadblocks = [];
+    this.heli = null;
+  }
+
+  _spawnUnit(playerPos, type) {
+    // Spawn on a street near the player, off-screen-ish.
+    const streets = this.city.streetXs;
+    const sx = playerPos.x + (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 60);
+    const sz = playerPos.z + (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 60);
+    const near = this.city.nearestStreet(sx, sz);
+    const heading = Math.atan2(-(playerPos.z - near.z), playerPos.x - near.x);
+    const v = new Vehicle(this.scene, type, near.x, near.z, heading);
+    v.driver = 'police';
+    v.health = 120;
+    return v;
+  }
+
+  _spawnRoadblock(playerPos, playerHeading, ahead = 55) {
+    // Two police cars parked across the road ahead of the player.
+    const ax = playerPos.x + Math.cos(playerHeading) * ahead;
+    const az = playerPos.z - Math.sin(playerHeading) * ahead;
+    const near = this.city.nearestStreet(ax, az);
+    const cars = [];
+    const perp = playerHeading + Math.PI / 2;
+    for (const off of [-4.5, 4.5]) {
+      const v = new Vehicle(this.scene, 'police',
+        near.x + Math.cos(perp) * off, near.z - Math.sin(perp) * off, playerHeading + Math.PI / 2);
+      v.driver = 'police';
+      v.parked = true;
+      cars.push(v);
+    }
+    this.roadblocks.push({ cars, x: near.x, z: near.z, timer: 25 });
+  }
+
+  update(dt, player, time) {
+    const tier = WANTED[this.stars] || WANTED[1];
+    this.sirenTimer -= dt;
+    if (this.stars > 0 && this.sirenTimer <= 0) {
+      this.sirenTimer = 1.4;
+      this.audio.sirenBlip();
+    }
+
+    // Wanted decay: hidden = no unit within 45 units and no heli.
+    if (this.stars > 0) {
+      let seen = false;
+      for (const u of [...this.units, ...this.swat]) {
+        if (u.pos.distanceTo(player.pos) < 55) { seen = true; break; }
+      }
+      if (this.heli) seen = true;
+      if (seen) { this.heatTimer = 0; this.cooldown = 0; }
+      else {
+        this.cooldown += dt;
+        if (this.cooldown > 8) {
+          this.cooldown = 0;
+          this.stars = Math.max(0, this.stars - 1);
+          if (this.stars === 0) this.clearAll();
+        }
+      }
+    }
+
+    // Keep the right number of units for the tier.
+    if (this.stars > 0) {
+      this.spawnTimer -= dt;
+      const wantChase = tier.chase;
+      const wantSwat = tier.swat;
+      if (this.spawnTimer <= 0 && (this.units.length < wantChase || this.swat.length < wantSwat)) {
+        this.spawnTimer = 2.5;
+        if (this.units.length < wantChase) this.units.push(this._spawnUnit(player.pos, 'police'));
+        else if (this.swat.length < wantSwat) this.swat.push(this._spawnUnit(player.pos, 'swat'));
+      }
+      if (tier.roadblocks > this.roadblocks.length && player.inCar && Math.random() < dt * 0.25) {
+        this._spawnRoadblock(player.pos, player.heading);
+      }
+      if (tier.heli && !this.heli) this.heli = new Helicopter(this.scene);
+      if (!tier.heli && this.heli) { this.heli.dispose(); this.heli = null; }
+    } else if (this.heli) {
+      this.heli.dispose();
+      this.heli = null;
+    }
+
+    // Chase AI: seek the player, ram on contact.
+    const driveUnit = (u, aggression) => {
+      const dx = player.pos.x - u.pos.x;
+      const dz = player.pos.z - u.pos.z;
+      const dist = Math.hypot(dx, dz);
+      const want = Math.atan2(-dz, dx);
+      let diff = want - u.heading;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      const steer = Math.max(-1, Math.min(1, diff * 1.6));
+      const throttle = dist > 6 ? 1 : 0.4;
+      u.drive(dt, throttle * aggression, steer, false);
+      this.city.resolveCollision(u.pos, 2.4);
+      // Ram damage to the player's car.
+      if (player.inCar && dist < 4.5) {
+        player.car.damage(6 * dt);
+        if (Math.random() < dt * 2) this.audio.crash();
+      }
+      return dist;
+    };
+
+    let nearestDist = Infinity;
+    for (const u of this.units) nearestDist = Math.min(nearestDist, driveUnit(u, 1));
+    for (const u of this.swat) nearestDist = Math.min(nearestDist, driveUnit(u, 0.9));
+
+    // Roadblocks age out.
+    for (let i = this.roadblocks.length - 1; i >= 0; i--) {
+      const r = this.roadblocks[i];
+      r.timer -= dt;
+      if (r.timer <= 0) {
+        for (const v of r.cars) v.dispose();
+        this.roadblocks.splice(i, 1);
+      }
+    }
+
+    if (this.heli) this.heli.update(dt, player.pos, time);
+
+    // BUSTED: on foot, police very close, player slow.
+    this.busted = false;
+    if (this.stars > 0 && !player.inCar && nearestDist < 4 && player.health > 0) {
+      this.busted = true;
+    }
+    return { nearestDist };
+  }
+
+  allUnits() { return [...this.units, ...this.swat]; }
+
+  dispose() { this.clearAll(); }
+}
