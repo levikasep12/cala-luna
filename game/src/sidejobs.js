@@ -2,15 +2,20 @@
 // Taxi fares, package runs, street races and stunt jumps. Each is a
 // small loop the player can start from anywhere, for cash and stats.
 
-import { RACES, STUNTS } from './config.js';
+import { RACES, STUNTS, TAXI, STUNT } from './config.js';
 
 export class SideJobs {
   constructor(game) {
     this.game = game;
-    this.taxi = null;   // {pickup, dropoff, fare, state}
+    this.taxi = null;   // {pickup, dropoff, fare, state, vip, timer, t0}
     this.package = null;
     this.race = null;   // {def, checkpoint, timer}
     this.stuntCooldown = 0;
+  }
+
+  // A random point on the street grid (60-unit steps, inside the city).
+  _randomStreetPoint() {
+    return [Math.round((Math.random() * 10 - 5)) * 60, Math.round((Math.random() * 10 - 5)) * 60];
   }
 
   // Back to a new game: no fare, no package, no race.
@@ -24,24 +29,36 @@ export class SideJobs {
   startTaxi() {
     if (this.taxi) return false;
     const g = this.game;
-    const px = Math.round((Math.random() * 10 - 5)) * 60;
-    const pz = Math.round((Math.random() * 10 - 5)) * 60;
-    const dx = Math.round((Math.random() * 10 - 5)) * 60;
-    const dz = Math.round((Math.random() * 10 - 5)) * 60;
-    const fare = 120 + Math.round(Math.hypot(dx - px, dz - pz) / 10) * 15;
-    this.taxi = { pickup: [px, pz], dropoff: [dx, dz], fare, state: 'pickup', t0: 0 };
-    g.hud.setObjective(`Taxi fare: pick up in ${g.city.districtAt(px, pz).name} — $${fare}`);
-    g.hud.say('Dispatcher', 'Fare waiting. Pick them up and drive smooth — tips for fast drops.');
+    const [px, pz] = this._randomStreetPoint();
+    // The dropoff must be a real drive away: the old code could roll
+    // pickup == dropoff, and the fare completed itself the frame the
+    // passenger got in.
+    let dx, dz;
+    do { [dx, dz] = this._randomStreetPoint(); } while (Math.hypot(dx - px, dz - pz) < 120);
+    let fare = 120 + Math.round(Math.hypot(dx - px, dz - pz) / 10) * 15;
+    // VIP fare: double money, but the passenger is on a clock — run
+    // out of time after pickup and they walk away, fare lost.
+    const vip = Math.random() < TAXI.vipChance;
+    if (vip) fare *= TAXI.vipMultiplier;
+    this.taxi = { pickup: [px, pz], dropoff: [dx, dz], fare, state: 'pickup', t0: 0, vip, timer: TAXI.vipTimeLimit };
+    g.hud.setObjective(`${vip ? 'VIP fare' : 'Taxi fare'}: pick up in ${g.city.districtAt(px, pz).name} — $${fare}${vip ? ` in ${TAXI.vipTimeLimit}s` : ''}`);
+    g.hud.say('Dispatcher', vip
+      ? 'VIP fare — double money, but they are on a clock. Drive like it matters.'
+      : 'Fare waiting. Pick them up and drive smooth — tips for fast drops.');
     return true;
   }
 
   startPackage() {
     if (this.package) return false;
     const g = this.game;
-    const dx = Math.round((Math.random() * 10 - 5)) * 60;
-    const dz = Math.round((Math.random() * 10 - 5)) * 60;
+    // Same re-roll as the taxi: a dropoff under the player's feet used
+    // to complete the run the instant it started.
+    let dx, dz, dist;
+    do {
+      [dx, dz] = this._randomStreetPoint();
+      dist = Math.hypot(dx - g.player.pos.x, dz - g.player.pos.z);
+    } while (dist < 60);
     // Longer runs pay more: $250 base plus $50 per city block of distance.
-    const dist = Math.hypot(dx - g.player.pos.x, dz - g.player.pos.z);
     const reward = 250 + Math.round(dist / 60) * 50;
     this.package = { dropoff: [dx, dz], reward, timer: 100 };
     g.hud.setObjective(`Package run: deliver to ${g.city.districtAt(dx, dz).name} in 100s — $${reward}`);
@@ -70,17 +87,28 @@ export class SideJobs {
 
     if (this.taxi) {
       const t = this.taxi;
+      // The VIP clock runs from pickup: late means no fare at all.
+      if (t.vip && t.state === 'dropoff') {
+        t.timer -= dt;
+        g.hud.setObjective(`VIP fare: drop off in ${g.city.districtAt(t.dropoff[0], t.dropoff[1]).name} — $${t.fare} — ${Math.ceil(t.timer)}s`);
+        if (t.timer <= 0) {
+          this.taxi = null;
+          g.hud.say('Passenger', "Too slow. I'll find another cab.");
+          g.hud.clearObjective();
+        }
+      }
+      if (!this.taxi) return;
       const target = t.state === 'pickup' ? t.pickup : t.dropoff;
       const d = Math.hypot(player.pos.x - target[0], player.pos.z - target[1]);
       if (d < 9) {
         if (t.state === 'pickup') {
           t.state = 'dropoff';
           t.t0 = g.time; // the tip clock starts when the fare gets in
-          g.hud.setObjective(`Taxi fare: drop off in ${g.city.districtAt(t.dropoff[0], t.dropoff[1]).name} — $${t.fare}`);
-          g.hud.say('Passenger', 'The Marina, please. And step on it — I tip for speed.');
+          g.hud.setObjective(`${t.vip ? 'VIP fare' : 'Taxi fare'}: drop off in ${g.city.districtAt(t.dropoff[0], t.dropoff[1]).name} — $${t.fare}`);
+          g.hud.say('Passenger', t.vip ? "The Marina. I'm late — double fare if you fly." : 'The Marina, please. And step on it — I tip for speed.');
         } else {
-          // Fast drop, big tip: under 60 seconds pays +50% on the fare.
-          const tip = (g.time - t.t0) < 60 ? Math.round(t.fare * 0.5) : 0;
+          // Fast drop, big tip: inside the window pays the tip rate.
+          const tip = (g.time - t.t0) < TAXI.tipWindowSec ? Math.round(t.fare * TAXI.tipRate) : 0;
           player.cash += t.fare + tip;
           g.stats.fares++;
           g.audio.cash();
@@ -138,10 +166,10 @@ export class SideJobs {
     if (player.inCar && this.stuntCooldown <= 0) {
       for (const s of STUNTS) {
         const d = Math.hypot(player.pos.x - s.ramp[0], player.pos.z - s.ramp[1]);
-        if (d < 6 && player.car.speedKmh > 80) {
-          this.stuntCooldown = 10;
-          // Faster air pays more: $300 at 80 km/h up to $1,000 flat-out.
-          const reward = Math.min(1000, 300 + Math.round((player.car.speedKmh - 80) * 5));
+        if (d < 6 && player.car.speedKmh > STUNT.minSpeedKmh) {
+          this.stuntCooldown = STUNT.cooldownSec;
+          // Faster air pays more: base at the minimum speed, capped.
+          const reward = Math.min(STUNT.maxReward, STUNT.baseReward + Math.round((player.car.speedKmh - STUNT.minSpeedKmh) * STUNT.perKmh));
           player.cash += reward;
           g.stats.stunts++;
           g.audio.missionPass();

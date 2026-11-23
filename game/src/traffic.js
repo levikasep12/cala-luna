@@ -6,8 +6,9 @@ import { Vehicle } from './vehicles.js';
 import { WORLD } from './config.js';
 import { makeRng, pick, weighted } from './random.js';
 
-// [type, weight]: sedans dominate the roads, the muscle car is rare.
-const TRAFFIC_TYPES = [['sedan', 5], ['coupe', 2], ['taxi', 2], ['truck', 1], ['muscle', 1]];
+// [type, weight]: sedans dominate the roads, the muscle car and the
+// convertible are rare — spotting one is half the reason to steal it.
+const TRAFFIC_TYPES = [['sedan', 5], ['coupe', 2], ['taxi', 2], ['truck', 1], ['muscle', 1], ['convertible', 1]];
 
 export class Traffic {
   constructor(scene, city, seed) {
@@ -95,7 +96,15 @@ export class Traffic {
           car.turnTarget = car.heading + (this.rng() < 0.5 ? 1 : -1) * Math.PI / 2;
         }
       }
-      const throttle = car.speed < car.cruise ? 0.6 : 0;
+      // Brake for the player: a traffic car with Luz right in front of
+      // it stops instead of rear-ending her. (Without this, traffic
+      // piled into the player's car at every red-light moment.)
+      const pdx = playerPos.x - car.pos.x, pdz = playerPos.z - car.pos.z;
+      const pDist = Math.hypot(pdx, pdz);
+      const fwdX = Math.cos(car.heading), fwdZ = -Math.sin(car.heading);
+      const playerAhead = pDist > 0.01 && pDist < 12
+        && (pdx * fwdX + pdz * fwdZ) / pDist > 0.7;
+      const throttle = playerAhead ? -0.5 : (car.speed < car.cruise ? 0.6 : 0);
       car.drive(dt, throttle, steer, false);
       city.resolveCollision(car.pos, 2.4);
     }

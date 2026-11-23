@@ -16,20 +16,29 @@ export const WORLD = {
 export const DISTRICTS = [
   { id: 'oldtown',  name: 'OLD TOWN',  x0: -330, z0: -330, x1: -90,  z1: 90,  color: '#e8b04b', rival: 'Los Lobos',      cut: 200 },
   { id: 'downtown', name: 'DOWNTOWN',  x0: -90,  z0: -330, x1: 150,  z1: 30,  color: '#7fb3e8', rival: 'The Kings',      cut: 400 },
-  { id: 'marina',   name: 'MARINA',    x0: 150,  z0: -180, x1: 330,  z1: 300, color: '#7ee8c0', rival: 'Harbor Boys',    cut: 350 },
+  // Marina runs to the north edge: its old z0 of -180 left the whole
+  // north-east corner falling through to OLD TOWN in districtAt, so the
+  // HUD named the wrong district up there.
+  { id: 'marina',   name: 'MARINA',    x0: 150,  z0: -330, x1: 330,  z1: 300, color: '#7ee8c0', rival: 'Harbor Boys',    cut: 350 },
   { id: 'hills',    name: 'THE HILLS', x0: -90,  z0: 30,   x1: 150,  z1: 300, color: '#c99be8', rival: 'Hilltop Crew',   cut: 300 },
   { id: 'docks',    name: 'THE DOCKS', x0: -330, z0: 90,   x1: -90,  z1: 300, color: '#e87f7f', rival: 'Dock Rats',      cut: 250 },
 ];
 
 export const VEHICLES = {
-  sedan:   { name: 'Comet Sedan',    topSpeed: 38, accel: 16, grip: 8.5, color: 0x9fb4c7, seats: 4 },
-  sports:  { name: 'Vortex GT',      topSpeed: 55, accel: 24, grip: 10,  color: 0xd43a2f, seats: 2 },
-  taxi:    { name: 'Luna Cab',       topSpeed: 36, accel: 15, grip: 8,   color: 0xf2c230, seats: 4 },
-  truck:   { name: 'Hauler Truck',   topSpeed: 30, accel: 11, grip: 7,   color: 0x5f7a5a, seats: 2 },
-  police:  { name: 'CLPD Interceptor', topSpeed: 50, accel: 22, grip: 10, color: 0x1c2733, seats: 4 },
-  swat:    { name: 'SWAT Van',       topSpeed: 42, accel: 18, grip: 9,   color: 0x14181f, seats: 6 },
-  coupe:   { name: 'Solstice Coupe', topSpeed: 47, accel: 20, grip: 9.5, color: 0x2f6fd0, seats: 2 },
-  muscle:  { name: 'Barracuda SS',   topSpeed: 52, accel: 22, grip: 9,   color: 0x7a2fd0, seats: 2 },
+  // value: what the car is worth to the collection (the garage totals
+  // it). Cop cars are worthless — Marco won't store them anyway.
+  sedan:   { name: 'Comet Sedan',    topSpeed: 38, accel: 16, grip: 8.5, color: 0x9fb4c7, seats: 4, value: 400 },
+  sports:  { name: 'Vortex GT',      topSpeed: 55, accel: 24, grip: 10,  color: 0xd43a2f, seats: 2, value: 1200 },
+  taxi:    { name: 'Luna Cab',       topSpeed: 36, accel: 15, grip: 8,   color: 0xf2c230, seats: 4, value: 300 },
+  truck:   { name: 'Hauler Truck',   topSpeed: 30, accel: 11, grip: 7,   color: 0x5f7a5a, seats: 2, value: 500 },
+  police:  { name: 'CLPD Interceptor', topSpeed: 50, accel: 22, grip: 10, color: 0x1c2733, seats: 4, value: 0 },
+  swat:    { name: 'SWAT Van',       topSpeed: 42, accel: 18, grip: 9,   color: 0x14181f, seats: 6, value: 0 },
+  coupe:   { name: 'Solstice Coupe', topSpeed: 47, accel: 20, grip: 9.5, color: 0x2f6fd0, seats: 2, value: 800 },
+  muscle:  { name: 'Barracuda SS',   topSpeed: 52, accel: 22, grip: 9,   color: 0x7a2fd0, seats: 2, value: 1000 },
+  // The convertible: a cruiser between coupe and muscle — quick enough
+  // to outrun a patrol car, soft enough that it still loses a straight
+  // race to the Vortex GT. Rare in traffic, like the muscle car.
+  convertible: { name: 'Cala Cabrio', topSpeed: 50, accel: 21, grip: 9.2, color: 0xe87fb0, seats: 2, value: 900 },
 };
 
 export const WEAPONS = {
@@ -54,6 +63,9 @@ export const WANTED = {
 export const CREW = [
   { id: 'marco', name: 'Marco "Wrench" Diaz', role: 'Mechanic', ability: 'Field Repair', desc: 'Instantly repairs your car to full health.', cooldown: 40 },
   { id: 'ines',  name: 'Ines "Ghost" Kato',   role: 'Hacker',   ability: 'Ghost Signal', desc: 'Wipes one wanted star, right now.', cooldown: 50 },
+  // Dante joins after Hot Wheels (the wheelman Luz outran wants in).
+  // Nitro in the car, a patch-up and a full breath on foot.
+  { id: 'dante', name: 'Dante "Smoke" Reyes', role: 'Wheelman', ability: 'Nitro Boost', desc: 'A burst of nitro — or a patch-up on foot.', cooldown: 45 },
 ];
 
 // Iron & Oak shelf prices. Weapon prices live in WEAPONS; these are the
@@ -62,6 +74,9 @@ export const SHOP = {
   armorPrice: 800,
   medkitPrice: 150,
   medkitHeal: 50,
+  // One crate refills every owned weapon to a full mag: cheaper than
+  // topping each up separately, so it pays once Luz owns two guns.
+  ammoCratePrice: 600,
 };
 
 // The story: 8 jobs. Each step: drive to a marker, do the thing, get paid.
@@ -79,7 +94,7 @@ export const STORY = [
   { id: 'hot-wheels', name: 'Hot Wheels', brief: 'A Vortex GT is parked in Downtown, and a buyer is waiting. Steal it, shake the 2-star heat, and deliver it to the garage.',
     steps: [
       { type: 'steal', label: 'Steal the Vortex GT in Downtown', at: [30, -210], vehicle: 'sports', reward: 0 },
-      { type: 'drive', label: 'Deliver the Vortex GT to the garage', at: [90, 210], reward: 1500 },
+      { type: 'drive', label: 'Deliver the Vortex GT to the garage', at: [90, 210], reward: 1500, recruit: 'dante' },
     ] },
   { id: 'harbor-run', name: 'Harbor Run', brief: 'The Harbor Boys want their goods at the marina in ninety seconds — with the CLPD already on your tail. Drive like the tide is chasing you.',
     steps: [
@@ -114,6 +129,9 @@ export const RACES = [
   { id: 'sprint-1', name: 'Crescent Sprint', entry: 200, prize: 1200, checkpoints: [[-240, -240], [0, -240], [240, -240], [240, 0], [240, 240]] },
   { id: 'sprint-2', name: 'Bay Loop', entry: 500, prize: 3000, checkpoints: [[-240, 240], [-240, -240], [240, -240], [240, 240], [0, 240]] },
   { id: 'sprint-3', name: 'Midnight Loop', entry: 800, prize: 5000, checkpoints: [[-240, -240], [240, -240], [240, 240], [-240, 240], [-240, 0], [0, 0]] },
+  // The long one: down the west side, across the bay front, and back
+  // up the east — six checkpoints, the richest purse on the island.
+  { id: 'sprint-4', name: 'Crescent Crown', entry: 1500, prize: 8000, checkpoints: [[-240, 240], [0, 240], [240, 240], [240, 0], [240, -240], [0, -240]] },
 ];
 
 export const STUNTS = [
@@ -129,9 +147,29 @@ export const SHOPS = {
   safehouse: { name: 'Safehouse', at: [-30, 150] },
 };
 
+// Taxi tuning: fast drops tip, and one fare in four is a VIP — double
+// fare, but the clock runs out and the fare walks away.
+export const TAXI = {
+  tipWindowSec: 60, tipRate: 0.5,
+  vipChance: 0.25, vipMultiplier: 2, vipTimeLimit: 90,
+};
+
+// Stunt tuning: airtime over a ramp pays by speed, capped.
+export const STUNT = {
+  cooldownSec: 10, baseReward: 300, maxReward: 1000, minSpeedKmh: 80, perKmh: 5,
+};
+
+// Territory tuning: held districts come under attack every few minutes
+// of play. Luz has a window to show up and hold the ground; if she
+// doesn't, the district falls back to its rival crew.
+export const TERRITORY = {
+  attackIntervalSec: 180, attackWindowSec: 90, repelReward: 500,
+};
+
 export const PLAYER = {
   walkSpeed: 6, runSpeed: 10, jumpSpeed: 8, maxHealth: 100, maxArmor: 100,
   startPos: [-30, 120], startCash: 250,
+  maxMedkits: 3, // medkits bought at Iron & Oak ride in a pouch (key 5)
   // Sprint stamina: drains while sprinting, refills when not. Sprint is
   // blocked at 0 until the bar recovers past 25, so a flat-out run
   // across the map needs pacing, not just a held Shift key.

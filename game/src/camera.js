@@ -41,12 +41,16 @@ export class Camera {
 
   // Jump the camera to its chase spot at once: no cross-map swoop
   // when the game starts, the player respawns, or a shot is staged.
+  // The snap honours the current view: the old code always snapped to
+  // the standard distance, so a respawn in FAR view lurched forward
+  // and then drifted back out over the next second.
   snapTo(targetPos, targetHeading) {
     const back = targetHeading + Math.PI + this.yaw;
-    const d = 11;
+    const d = 11 + this.distBoost;
+    const h = 5 + this.heightBoost;
     this.pos.set(
       targetPos.x + Math.cos(back) * d * Math.cos(this.pitch),
-      targetPos.y + 5 + Math.sin(this.pitch) * d * 0.6,
+      targetPos.y + h + Math.sin(this.pitch) * d * 0.6,
       targetPos.z - Math.sin(back) * d * Math.cos(this.pitch),
     );
     this.lookAt.set(targetPos.x, targetPos.y + 2.2, targetPos.z);
@@ -83,6 +87,13 @@ export class Camera {
     const k = Math.min(1, dt * 5);
     this.pos.lerp(want, k);
     if (this.pos.y < 1.6) this.pos.y = 1.6;
+    // Speed widens the lens: up to +12° of FOV flat-out in a car, so
+    // 150 km/h feels like 150 km/h instead of 60. Eased, never snapped.
+    const targetFov = inCar ? 62 + Math.min(12, speedKmh / 14) : 62;
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 3);
+      this.camera.updateProjectionMatrix();
+    }
     this.lookAt.lerp(new THREE.Vector3(targetPos.x, targetPos.y + 2.2, targetPos.z), Math.min(1, dt * 8));
     this.shake = Math.max(0, this.shake - dt * 2.2);
     const sh = this.shake * this.shake;

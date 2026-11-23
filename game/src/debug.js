@@ -15,6 +15,9 @@ export function installDebugHook(game) {
         health: p.health,
         armor: p.armor,
         stamina: Math.round(p.stamina),
+        medkits: p.medkits,
+        ammo: { ...p.ammo },
+        district: game.city.districtAt(p.pos.x, p.pos.z).name,
         stars: game.police.stars,
         inCar: p.inCar,
         car: p.inCar ? p.car.type : null,
@@ -40,6 +43,7 @@ export function installDebugHook(game) {
       };
     },
     giveCash(n) { game.player.cash += n; return game.player.cash; },
+    setCash(n) { game.player.cash = Math.max(0, Math.floor(n)); return game.player.cash; },
     setStars(n) { game.police.setStars(n); return game.police.stars; },
     giveWeapon(id) {
       if (!WEAPONS[id]) return null;
@@ -48,6 +52,29 @@ export function installDebugHook(game) {
       p.ammo[id] = 999;
       p.setWeapon(id);
       return p.weapon;
+    },
+    // Full loadout for play-testing: every weapon, full ammo, armor.
+    giveAll() {
+      const p = game.player;
+      for (const id of Object.keys(WEAPONS)) {
+        if (id === 'fists') continue;
+        p.owned.add(id);
+        p.ammo[id] = WEAPONS[id].ammo;
+      }
+      p.armor = 100;
+      p.medkits = 3;
+      p.setWeapon('rifle');
+      return [...p.owned];
+    },
+    // Skip the current job and start the next one (play-testing only).
+    skipJob() {
+      if (game.missions.done) return 'done';
+      game.missions.active = false;
+      game.missions._clearMarker();
+      game.combat.clearEnemies();
+      game.missions.jobIndex++;
+      game.missions.start();
+      return game.missions.job ? game.missions.job.name : 'done';
     },
     heal() { game.player.heal(100); game.player.armor = 100; return game.player.health; },
     setHour(h) { game.weather.setHour(h); return game.weather.clockString(); },

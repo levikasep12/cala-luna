@@ -13,6 +13,17 @@ import { buildDossier } from './vendor/makefun-game.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+// The scorer's own caps (reference/gate.json), in one place: the
+// pre-flight check below and buildDossier both read these, so the two
+// can never drift apart.
+const CAPS = {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
+  game_path_max_bytes: 1000,
+};
+
 // Everything is derived from import.meta.url, never process.cwd(), so the
 // program produces byte-identical output from any working directory.
 function countTree(dir) {
@@ -37,6 +48,19 @@ function main() {
     process.exitCode = 1;
     return;
   }
+  // Pre-flight: refuse an entry the scorer would refuse, before copying
+  // anything — a half-written /output is worse than a clear error.
+  const src = countTree(gameDir);
+  if (src.files > CAPS.game_max_files) {
+    console.error(`main.ts: game/ has ${src.files} files, over the ${CAPS.game_max_files} cap — nothing handed in`);
+    process.exitCode = 1;
+    return;
+  }
+  if (src.bytes > CAPS.game_max_bytes) {
+    console.error(`main.ts: game/ is ${src.bytes} bytes, over the ${CAPS.game_max_bytes} cap — nothing handed in`);
+    process.exitCode = 1;
+    return;
+  }
   mkdirSync(out, { recursive: true });
   cpSync(gameDir, join(out, 'game'), { recursive: true });
   const game = countTree(join(out, 'game'));
@@ -47,17 +71,11 @@ function main() {
     shots = countTree(join(out, 'screenshots'));
   }
 
-  // The scorer's own caps (reference/gate.json): only text_max_bytes shapes
-  // the bytes; the others refuse an entry the scorer would refuse.
+  // Only text_max_bytes shapes the bytes; the other caps refuse an
+  // entry the scorer would refuse (the pre-flight check already did).
   writeFileSync(
     join(out, 'dossier.json'),
-    buildDossier(out, {
-      text_max_bytes: 163840,
-      screenshots: { max: 4, max_bytes: 262144 },
-      game_max_files: 993,
-      game_max_bytes: 50331648,
-      game_path_max_bytes: 1000,
-    }),
+    buildDossier(out, CAPS),
   );
   console.log(`CALA LUNA handed in to ${out}: ${game.files} game files (${game.bytes} bytes), ${shots.files} screenshots (${shots.bytes} bytes), dossier.json written`);
 }

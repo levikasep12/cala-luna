@@ -36,6 +36,7 @@ export class Combat {
     const e = {
       g, pos: g.position, health: 60, shootTimer: 1 + Math.random() * 2, gang, dead: false,
       strafeDir: Math.random() < 0.5 ? 1 : -1, strafeTimer: 2 + Math.random() * 2,
+      flinch: 0, // seconds left of being staggered by a hit
     };
     this.enemies.push(e);
     return e;
@@ -88,10 +89,18 @@ export class Combat {
       if (best) {
         best.health -= spec.damage;
         this.effects.blood(best.pos);
+        // A hit staggers the enemy half a second and knocks them back
+        // a step: landing shots should feel like it interrupts them.
+        best.flinch = 0.5;
+        best.pos.x += dir.x * 0.4;
+        best.pos.z += dir.z * 0.4;
         if (best.health <= 0) {
           best.dead = true;
           best.g.rotation.x = -Math.PI / 2;
           best.g.position.y = 0.3;
+          // Rivals carry pocket cash: $25 a head, straight to Luz.
+          player.cash += 25;
+          this.effects.burst(new THREE.Vector3(best.pos.x, 1, best.pos.z), 0xffd166, 6, 4, 0.25);
           hits++;
         }
       }
@@ -107,6 +116,11 @@ export class Combat {
   update(dt, player, city) {
     for (const e of this.enemies) {
       if (e.dead) continue;
+      if (e.flinch > 0) {
+        // Staggered: no moving, no shooting, just recovering.
+        e.flinch -= dt;
+        continue;
+      }
       const dx = player.pos.x - e.pos.x;
       const dz = player.pos.z - e.pos.z;
       const dist = Math.hypot(dx, dz);
@@ -133,8 +147,10 @@ export class Combat {
         const target = player.pos.clone(); target.y = 1.3;
         const dir = target.sub(origin).normalize();
         // Accuracy falls off with range: point-blank is dangerous, a
-        // potshot from across the street mostly misses.
-        const acc = dist < 15 ? 0.55 : dist < 30 ? 0.4 : 0.25;
+        // potshot from across the street mostly misses. And a moving
+        // car is harder to hit than a person on foot — drive-bys cut
+        // both ways, so the player in a car is a worse target.
+        const acc = (dist < 15 ? 0.55 : dist < 30 ? 0.4 : 0.25) * (player.inCar ? 0.6 : 1);
         const hit = Math.random() < acc;
         this.effects.tracer(origin, origin.clone().addScaledVector(dir, Math.min(dist, 45)));
         this.audio.shoot();

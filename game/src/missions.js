@@ -122,6 +122,15 @@ export class Missions {
       this.game.player.cash += s.reward;
       this.game.audio.cash();
     }
+    // Beat the clock, get paid for it: timed steps pay $5 per second
+    // left, up to $300. A clean fast run is worth more than a crawl.
+    if (s.timeLimit && this.stepTimer > 0) {
+      const bonus = Math.min(300, Math.floor(this.stepTimer) * 5);
+      if (bonus > 0) {
+        this.game.player.cash += bonus;
+        this.game.hud.say('Luz', `Beat the clock — $${bonus} time bonus.`);
+      }
+    }
     if (s.recruit) this.game.crew.recruit(s.recruit);
     if (s.takeDistrict) this.game.territory.capture(s.takeDistrict);
     this.stepIndex++;
@@ -139,6 +148,10 @@ export class Missions {
     this.active = false;
     this.game.stats.missionsDone++;
     this.game.audio.missionPass();
+    // Gold in the air over Luz: a finished job should look finished.
+    const at = this.game.player.pos.clone();
+    at.y = 1.5;
+    this.game.effects.burst(at, 0xffd166, 20, 8, 0.4);
     const total = job.steps.reduce((a, s) => a + (s.reward || 0), 0);
     this.game.hud.showMissionCard(job.name, total,
       this.jobIndex + 1 < STORY.length ? `Next job: ${STORY[this.jobIndex + 1].name}` : 'The whole city is yours, Luz.');
@@ -151,6 +164,10 @@ export class Missions {
 
   fail(reason) {
     this._clearMarker();
+    // The job's enemies leave with it: the old code left Bank Job
+    // guards standing around after a fail, and a retry stacked a
+    // second ring of guards on top of the survivors.
+    this.game.combat.clearEnemies();
     this.active = false;
     this.game.audio.missionFail();
     this.game.hud.showMissionCard('MISSION FAILED', 0, reason + ' — press R to retry.');

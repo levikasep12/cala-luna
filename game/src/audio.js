@@ -9,6 +9,8 @@ export class Audio {
     this.engineGain = null;
     this.musicTimer = null;
     this.musicStep = 0;
+    this.rotorOsc = null; // helicopter rotor loop (null when no heli)
+    this.rotorOn = false;
   }
 
   init() {
@@ -73,6 +75,8 @@ export class Audio {
   horn() { this._tone(370, 0.25, 'square', 0.07); this._tone(466, 0.25, 'square', 0.07); }
   skid() { this._noise(0.25, 0.12, 900); }
   countdown() { [660, 660, 990].forEach((f, i) => setTimeout(() => this._tone(f, 0.12, 'square', 0.09), i * 200)); }
+  // Two low buzzes: a purchase that didn't happen (broke, plated, pouch full).
+  denied() { this._tone(140, 0.12, 'square', 0.08); setTimeout(() => this._tone(110, 0.16, 'square', 0.08), 110); }
 
   startEngine() {
     if (!this.ctx || this.engineOsc) return;
@@ -102,6 +106,43 @@ export class Audio {
     this.engineOsc.disconnect();
     this.engineOsc = null;
     this.engineGain = null;
+  }
+
+  // Helicopter rotor: a low sawtooth chopped by an 11 Hz LFO, the
+  // thump-thump of blades. Starts when the heli spawns, stops when it
+  // leaves; the main loop drives it from police.heli.
+  startRotor() {
+    if (!this.ctx || this.rotorOsc) return;
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = 48;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.035;
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 11;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 0.03;
+    lfo.connect(lfoGain).connect(g.gain);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 220;
+    o.connect(f).connect(g).connect(this.ctx.destination);
+    o.start();
+    lfo.start();
+    this.rotorOsc = o;
+    this.rotorLfo = lfo;
+    this.rotorOn = true;
+  }
+
+  stopRotor() {
+    if (!this.rotorOsc) return;
+    try { this.rotorOsc.stop(); } catch { /* already stopped */ }
+    try { this.rotorLfo.stop(); } catch { /* already stopped */ }
+    this.rotorOsc.disconnect();
+    this.rotorLfo.disconnect();
+    this.rotorOsc = null;
+    this.rotorLfo = null;
+    this.rotorOn = false;
   }
 
   startMusic() {

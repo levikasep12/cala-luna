@@ -9,8 +9,9 @@ import { WORLD, DISTRICTS, WEAPONS, STUNTS } from './config.js';
 export class Hud {
   constructor() {
     this.el = {};
-    for (const id of ['hud', 'cash-value', 'clock-district', 'wanted-stars', 'health-fill', 'armor-fill',
-      'stamina-fill', 'objective-label', 'objective-text', 'hud-objective', 'speed-value', 'speed-unit', 'vehicle-name',
+    for (const id of ['hud', 'cash-value', 'clock-district', 'medkit-count', 'wanted-stars', 'health-fill', 'armor-fill',
+      'stamina-fill', 'heat-bar', 'heat-fill', 'damage-vignette', 'objective-label', 'objective-text', 'hud-objective',
+      'speed-value', 'speed-unit', 'vehicle-name',
       'hud-weapon', 'weapon-name', 'ammo-value', 'crew-status', 'dialogue-bar', 'dialogue-speaker', 'dialogue-text',
       'banner', 'hud-hint', 'mission-card', 'mission-card-title', 'mission-card-name', 'mission-card-reward',
       'mission-card-sub', 'busted-card', 'busted-title', 'busted-sub']) {
@@ -86,6 +87,19 @@ export class Hud {
     this.el['health-fill'].style.width = `${p.health}%`;
     this.el['armor-fill'].style.width = `${p.armor}%`;
     this.el['stamina-fill'].style.width = `${p.stamina}%`;
+    // Medkits in the pouch, and the low-health vignette: under 35 HP
+    // the screen edges bleed red, pulsing, until Luz patches up.
+    this.el['medkit-count'].textContent = p.medkits > 0 ? `✚ ${p.medkits} MEDKIT${p.medkits > 1 ? 'S' : ''} [5]` : '';
+    this.el['damage-vignette'].style.opacity = p.health < 35
+      ? String(0.35 + Math.sin(game.time * 5) * 0.15) : '0';
+    // Heat cooldown: while Luz is hidden, the bar fills toward losing
+    // a star (6 + 2s per star). Hidden while she is seen.
+    const cooling = stars > 0 && game.police.cooldown > 0;
+    this.el['heat-bar'].style.display = cooling ? 'block' : 'none';
+    if (cooling) {
+      const need = 6 + stars * 2;
+      this.el['heat-fill'].style.width = `${Math.min(100, (game.police.cooldown / need) * 100)}%`;
+    }
     this.el['speed-value'].textContent = Math.round(p.speedKmh);
     this.el['speed-unit'].textContent = p.inCar ? 'KM/H' : 'ON FOOT';
     this.el['vehicle-name'].textContent = p.inCar ? p.car.spec.name : d.name + ' — ' + game.territory.statusText();
@@ -141,9 +155,11 @@ export class Hud {
       g.beginPath(); g.moveTo(px(s), 0); g.lineTo(px(s), S); g.stroke();
       g.beginPath(); g.moveTo(0, pz(s)); g.lineTo(S, pz(s)); g.stroke();
     }
-    // Landmarks.
-    g.fillStyle = '#ffd166';
-    for (const lm of Object.values(game.city.landmarks)) {
+    // Landmarks, colour-coded so the map reads at a glance: home is
+    // green, the gun shop orange, the garage blue, the rest gold.
+    const LM_COLORS = { safehouse: '#7ee787', gunshop: '#ff9f43', garage: '#79c0ff' };
+    for (const [id, lm] of Object.entries(game.city.landmarks)) {
+      g.fillStyle = LM_COLORS[id] || '#ffd166';
       g.fillRect(px(lm.x) - 2, pz(lm.z) - 2, 4, 4);
     }
     // Stunt ramps (orange triangles).

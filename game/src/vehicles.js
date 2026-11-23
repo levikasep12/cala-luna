@@ -22,6 +22,7 @@ export class Vehicle {
     this.steer = 0;
     this.health = 100;
     this.smoking = false;
+    this.boostTimer = 0; // seconds of nitro left (Dante's ability)
     this.driver = null; // 'player' | 'traffic' | 'police' | null
     this.group = new THREE.Group();
     this.group.position.copy(this.pos);
@@ -80,6 +81,26 @@ export class Vehicle {
     this.tailLights = [tl, tl2];
     this.tailDim = tlMat;
     this.tailBright = new THREE.MeshBasicMaterial({ color: 0xff3020 });
+    // Reverse lights: small white lamps under the taillights, lit only
+    // while the car is actually moving backwards.
+    const revMat = new THREE.MeshBasicMaterial({ color: 0xf0f4ff });
+    const rl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.4), revMat);
+    rl.position.set(-len / 2 - 0.05, 0.55, wid / 2 - 0.4);
+    rl.visible = false;
+    this.group.add(rl);
+    const rl2 = rl.clone(); rl2.position.z = -wid / 2 + 0.4; this.group.add(rl2);
+    this.reverseLights = [rl, rl2];
+    // Nitro flame: an orange cone at the tailpipe, visible only while
+    // boosting. Dante's ability lights it.
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.35, 1.4, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffa020, transparent: true, opacity: 0.9 }),
+    );
+    flame.rotation.z = Math.PI / 2;
+    flame.position.set(-len / 2 - 0.8, 0.6, 0);
+    flame.visible = false;
+    this.group.add(flame);
+    this.flame = flame;
     // Police light bar
     if (this.type === 'police') {
       const bar = new THREE.Group();
@@ -101,16 +122,22 @@ export class Vehicle {
     this.width = wid;
   }
 
+  // Nitro: a few seconds of extra top speed and acceleration.
+  // Dante's crew ability calls this; the flame shows while it burns.
+  boost(seconds) { this.boostTimer = Math.max(this.boostTimer, seconds); }
+
   // Drive the car for one step. throttle -1..1, steer -1..1, handbrake bool.
   drive(dt, throttle, steer, handbrake) {
     const s = this.spec;
+    const boosting = this.boostTimer > 0;
+    if (boosting) this.boostTimer -= dt;
     this.steer += (steer - this.steer) * Math.min(1, dt * 8);
-    const accel = throttle > 0 ? s.accel : s.accel * 1.4;
+    const accel = (throttle > 0 ? s.accel : s.accel * 1.4) * (boosting ? 1.5 : 1);
     this.speed += throttle * accel * dt;
     // Drag + rolling resistance
     this.speed -= this.speed * (handbrake ? 1.6 : 0.35) * dt;
     if (Math.abs(this.speed) < 0.05 && throttle === 0) this.speed = 0;
-    const max = s.topSpeed * (this.health < 30 ? 0.55 : 1);
+    const max = s.topSpeed * (this.health < 30 ? 0.55 : 1) * (boosting ? 1.35 : 1);
     this.speed = Math.max(-12, Math.min(max, this.speed));
     // Damage degrades the handling, not just the top speed: a beaten-up
     // car turns sluggish, so a chase in a wreck feels like a chase.
@@ -122,6 +149,17 @@ export class Vehicle {
     const wantMat = braking ? this.tailBright : this.tailDim;
     if (this.tailLights[0].material !== wantMat) {
       for (const t of this.tailLights) t.material = wantMat;
+    }
+    // Reverse lights follow actual rearward motion, not the pedal:
+    // a car rolling back downhill lights them too.
+    const reversing = this.speed < -0.5;
+    if (this.reverseLights[0].visible !== reversing) {
+      for (const l of this.reverseLights) l.visible = reversing;
+    }
+    // Nitro flame flickers while the boost burns.
+    if (this.flame) {
+      this.flame.visible = boosting;
+      if (boosting) this.flame.scale.setScalar(0.8 + Math.random() * 0.5);
     }
     const dx = Math.cos(this.heading) * this.speed * dt;
     const dz = -Math.sin(this.heading) * this.speed * dt;

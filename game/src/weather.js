@@ -26,6 +26,11 @@ export class Weather {
     this.sun.target = this.sunTarget;
     this.hemi = new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.85);
     scene.add(this.hemi);
+    // Drifting clouds: flat white puffs high above the city, bright by
+    // day and nearly gone by night.
+    this.cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+    this.clouds = this._makeClouds();
+    scene.add(this.clouds);
     // Stars and a moon: invisible in daylight, out after dark.
     this.stars = this._makeStars();
     scene.add(this.stars);
@@ -38,6 +43,28 @@ export class Weather {
     scene.add(this.moon);
     this.scene.background = new THREE.Color(0xffcf9e);
     this.scene.fog = new THREE.Fog(0xf2c48d, 180, 700);
+  }
+
+  _makeClouds() {
+    const group = new THREE.Group();
+    this.cloudSpeeds = [];
+    for (let i = 0; i < 8; i++) {
+      const cloud = new THREE.Group();
+      // Two or three flattened boxes read as a puff from the ground.
+      const puffs = 2 + Math.floor(Math.random() * 2);
+      for (let p = 0; p < puffs; p++) {
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(26 + Math.random() * 22, 5 + Math.random() * 3, 14 + Math.random() * 8),
+          this.cloudMat,
+        );
+        m.position.set(p * 18 - puffs * 9, Math.random() * 2, (Math.random() - 0.5) * 8);
+        cloud.add(m);
+      }
+      cloud.position.set(-400 + Math.random() * 800, 150 + Math.random() * 60, -350 + Math.random() * 600);
+      group.add(cloud);
+      this.cloudSpeeds.push(1.5 + Math.random() * 2);
+    }
+    return group;
   }
 
   _makeStars() {
@@ -86,15 +113,23 @@ export class Weather {
     else sky.setHSL(0.62, 0.5, 0.08);
     this.scene.background.copy(sky);
     this.scene.fog.color.copy(sky).lerp(new THREE.Color(0xf2c48d), golden * 0.5);
-    // Night falls: stars and moon fade in once the sun is well down.
+    // Night falls: stars and moon fade in once the sun is well down,
+    // and the clouds fade out with the light.
     const night = Math.max(0, Math.min(1, -elev * 3));
     this.stars.material.opacity = night * 0.9;
     this.moon.material.opacity = night * 0.95;
+    this.cloudMat.opacity = 0.1 + dayness * 0.65;
   }
 
   update(dt, focusPos) {
     this.hour = (this.hour + (dt / WORLD.dayLengthSec) * 24) % 24;
     this._apply(dt);
+    // Clouds drift east and wrap around the sky.
+    for (let i = 0; i < this.clouds.children.length; i++) {
+      const c = this.clouds.children[i];
+      c.position.x += this.cloudSpeeds[i] * dt;
+      if (c.position.x > 480) c.position.x = -480;
+    }
     // Keep the shadow camera centred on the action.
     if (focusPos) {
       this.sunTarget.position.set(focusPos.x, 0, focusPos.z);

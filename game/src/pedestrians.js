@@ -53,6 +53,16 @@ export class Pedestrians {
     const armR = armL.clone();
     armR.position.x = 0.45;
     g.add(legs, torso, head, armL, armR);
+    // One pedestrian in four wears a hat: cheap variety, so the crowd
+    // stops looking like it was stamped from one mould.
+    if (rng() < 0.25) {
+      const hat = new THREE.Mesh(
+        new THREE.BoxGeometry(0.6, 0.14, 0.6),
+        new THREE.MeshLambertMaterial({ color: pick(rng, [0xd8c49a, 0x2a2a2a, 0xd43a2f]) }),
+      );
+      hat.position.y = 2.24;
+      g.add(hat);
+    }
     g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
     g.position.set(px, 0, pz);
     this.group.add(g);
@@ -84,7 +94,10 @@ export class Pedestrians {
     }
   }
 
-  update(dt, city, playerPos) {
+  // cars: the vehicles a walker stops for (traffic + police). A
+  // pedestrian with a car on top of them freezes instead of strolling
+  // through the bonnet.
+  update(dt, city, playerPos, cars = []) {
     const rng = this.rng;
     for (let i = this.peds.length - 1; i >= 0; i--) {
       const p = this.peds[i];
@@ -109,6 +122,9 @@ export class Pedestrians {
           p.state = 'walk';
           p.target = this._newTarget(p.pos.x, p.pos.z);
         }
+      } else if (cars.some((c) => Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 4.5)) {
+        // A car is right there: stand still this frame instead of
+        // walking through it. The car moves on; the walker resumes.
       } else {
         const t = p.target;
         const tx = t.x - p.pos.x, tz = t.z - p.pos.z;

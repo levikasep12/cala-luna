@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/gta6-01/levikasep12/cala-luna/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/levikasep12/cala-luna/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-CALA LUNA — a sun-soaked open-world crime game in the crescent bay. Luz Vega drives for hire across five districts: 8 story jobs, a two-person crew with abilities, territory takeovers, a 5-star CLPD response with patrolling cruisers, chases, roadblocks, a police helicopter and SWAT, street races, taxi fares (with a tip for fast drops), package runs, stunt jumps, a garage of stolen cars and a gun shop — all in a procedural 3D city (three.js) that plays offline in desktop Chrome from static files. Sprinting spends stamina, damage makes cars handle worse, and every district pays its own cut.
+CALA LUNA — a sun-soaked open-world crime game in the crescent bay. Luz Vega drives for hire across five districts: 8 story jobs, a three-person crew with abilities (Marco repairs, Ines wipes a star, Dante burns nitro), territory takeovers with rival counter-attacks, a 5-star CLPD response with patrolling cruisers, chases, roadblocks, a police helicopter and SWAT, street races, taxi fares (with a tip for fast drops — and VIP fares on a clock), package runs, stunt jumps, a garage of stolen cars and a gun shop — all in a procedural 3D city (three.js) that plays offline in desktop Chrome from static files. Sprinting spends stamina, damage makes cars handle worse, every district pays its own cut, and medkits ride in a pouch for mid-job patch-ups.
 
 ## Run it
 
@@ -13,7 +13,7 @@ node serve.ts
 # open http://localhost:8080
 ```
 
-WASD walk/drive, Shift sprint (stamina), Space jump/handbrake, E enter/exit car, F carjack, H horn, C camera view, mouse drag orbit camera, click punch/shoot, 1/2/3/4 weapons, Q crew ability, T taxi fare, P package run, G garage, Esc pause, M mute, R restart mission. Progress saves automatically (localStorage). Add `?seed=N` for a different city.
+WASD walk/drive, Shift sprint (stamina), Space jump/handbrake, E enter/exit car, F carjack, H horn, C camera view, mouse drag orbit camera, click punch/shoot, 1/2/3/4 weapons, 5 use medkit, Q crew ability, T taxi fare, P package run, G garage, Esc pause, M mute, R restart mission. Progress saves automatically (localStorage, with a backup slot). Add `?seed=N` for a different city.
 
 ## Layout
 

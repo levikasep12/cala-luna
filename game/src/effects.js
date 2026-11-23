@@ -35,6 +35,20 @@ export class Effects {
 
   blood(pos) { this.burst(new THREE.Vector3(pos.x, 1.2, pos.z), 0xa02020, 8, 4, 0.3); }
 
+  // Green sparkles rising from a heal: medkits, crew patches, district
+  // captures. The player should SEE the health come back.
+  heal(pos) {
+    const at = new THREE.Vector3(pos.x, 1, pos.z);
+    this.burst(at, 0x7ee787, 12, 3, 0.3);
+    this.burst(at, 0xffffff, 5, 2, 0.2);
+  }
+
+  // White-grey tyre smoke for handbrake slides.
+  tireSmoke(pos) {
+    const at = new THREE.Vector3(pos.x + (Math.random() - 0.5) * 2, 0.4, pos.z + (Math.random() - 0.5) * 2);
+    this._spawn(at, 0xd8d8d8, 0.8, new THREE.Vector3((Math.random() - 0.5), 1.4, (Math.random() - 0.5)), 0.8);
+  }
+
   smoke(pos) {
     this._spawn(new THREE.Vector3(pos.x, 1.6, pos.z), 0x555555, 0.9,
       new THREE.Vector3((Math.random() - 0.5), 2.2, (Math.random() - 0.5)), 1.2);
@@ -66,6 +80,9 @@ export class Effects {
   }
 
   muzzleFlash(origin, heading) {
+    // Same cap idea as particles: a rifle on full-auto must not grow
+    // the flash list without bound.
+    if (this.flashes.length > 12) return;
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.1),
       new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }),
@@ -74,11 +91,16 @@ export class Effects {
     m.position.copy(origin).addScaledVector(fwd, 1.1);
     m.position.y = 1.45;
     m.lookAt(m.position.clone().add(fwd));
+    // A flash that never varies reads as a sticker: roll it and jitter
+    // its size so no two shots look alike.
+    m.rotateZ(Math.random() * Math.PI);
+    m.scale.setScalar(0.85 + Math.random() * 0.4);
     this.scene.add(m);
     this.flashes.push({ mesh: m, life: 0.09 });
   }
 
   tracer(from, to) {
+    if (this.tracers.length > 40) return;
     const dir = to.clone().sub(from);
     const len = dir.length();
     const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 4);

@@ -142,9 +142,18 @@ export class Police {
       }
       if (tier.heli && !this.heli) this.heli = new Helicopter(this.scene, player.pos);
       if (!tier.heli && this.heli) { this.heli.dispose(); this.heli = null; }
-    } else if (this.heli) {
-      this.heli.dispose();
-      this.heli = null;
+    } else {
+      if (this.heli) { this.heli.dispose(); this.heli = null; }
+      // No heat, but the city still has cops: one ambient patrol keeps
+      // cruising the grid. It never chases — see the guard in
+      // _drivePatrol — it just makes the streets feel watched.
+      if (this.patrols.length < 1) {
+        this.spawnTimer -= dt;
+        if (this.spawnTimer <= 0) {
+          this.spawnTimer = 3;
+          this.patrols.push(this._spawnPatrol(player.pos));
+        }
+      }
     }
 
     // Chase AI: seek the player, ram on contact. Parked units hold.
@@ -154,9 +163,18 @@ export class Police {
     for (const u of this.swat) nearestDist = Math.min(nearestDist, this._driveChase(u, player, dt, 0.9));
     for (const u of this.patrols) nearestDist = Math.min(nearestDist, this._drivePatrol(u, player, dt));
 
-    // Roadblocks age out.
+    // Roadblocks age out — but a roadblock Luz drives up to doesn't
+    // sit there: its cars unpark and join the chase.
     for (let i = this.roadblocks.length - 1; i >= 0; i--) {
       const r = this.roadblocks[i];
+      if (Math.hypot(player.pos.x - r.x, player.pos.z - r.z) < 30) {
+        for (const v of r.cars) {
+          v.parked = false;
+          this.units.push(v);
+        }
+        this.roadblocks.splice(i, 1);
+        continue;
+      }
       r.timer -= dt;
       if (r.timer <= 0) {
         for (const v of r.cars) v.dispose();
@@ -205,12 +223,14 @@ export class Police {
   }
 
   // One patrol step: cruise toward the beat waypoint; if Luz is close
-  // enough to spot, join the chase like any other unit.
+  // enough to spot AND wanted, join the chase like any other unit.
+  // The stars guard matters: the ambient 0-star patrol must cruise
+  // past Luz, not ram her for nothing.
   _drivePatrol(u, player, dt) {
     const dx = player.pos.x - u.pos.x;
     const dz = player.pos.z - u.pos.z;
     const dist = Math.hypot(dx, dz);
-    if (dist < 35) return this._driveChase(u, player, dt, 1);
+    if (dist < 35 && this.stars > 0) return this._driveChase(u, player, dt, 1);
     const t = u.patrolTarget;
     const tx = t.x - u.pos.x, tz = t.z - u.pos.z;
     if (Math.hypot(tx, tz) < 10) {

@@ -95,6 +95,16 @@ export function applyShot(game, name) {
     g.camera.snapTo(g.player.pos, g.player.heading);
     g.player.cash = 3250;
     g.sidejobs.startTaxi();
+    // The fare is deterministic here: pickup at the Old Town rank,
+    // dropoff at the Marina promenade — the same run the dispatcher's
+    // line describes. A random fare could point anywhere and the
+    // waypoint would land off-frame.
+    const fare = g.sidejobs.taxi;
+    fare.pickup = [-240, -240];
+    fare.dropoff = [240, 120];
+    fare.vip = false;
+    fare.fare = 120 + Math.round(Math.hypot(480, 360) / 10) * 15;
+    g.hud.setObjective(`Taxi fare: pick up in ${g.city.districtAt(-240, -240).name} — $${fare.fare}`);
     g.traffic.ensureCount(16, g.player.pos);
     g.pedestrians.ensureCount(26, g.player.pos);
     // Life in the frame: a taxi coming down the avenue toward the
@@ -104,7 +114,7 @@ export function applyShot(game, name) {
     g.pedestrians.spawnAt(-203, -190);
     g.pedestrians.spawnAt(-217, -200);
     g.hud.say('Dispatcher', 'Fare at the Old Town rank. The Marina run pays double tonight.');
-    waitGame(1.2, 'street: on foot, taxi fare, pedestrians, traffic');
+    waitGame(1.2, 'street: on foot, Old Town rank to Marina fare, pedestrians, traffic');
     return;
   }
 

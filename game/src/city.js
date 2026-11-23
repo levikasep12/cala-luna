@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { WORLD, DISTRICTS, SHOPS, STUNTS } from './config.js';
-import { makeRng, pick, range, rangeInt, chance, gauss } from './random.js';
+import { makeRng, pick, pickN, range, rangeInt, chance, gaussRange } from './random.js';
 
 const PALETTE = [0xd8c49a, 0xc9a06c, 0xb08a5e, 0x9db3c8, 0xc98d7a, 0xa8b89a, 0xd9c9a3, 0x8fa3b8];
 
@@ -48,7 +48,15 @@ export class City {
           pos.x = cx + (dx / d) * radius;
           pos.z = cz + (dz / d) * radius;
         } else {
-          pos.x = b.x1 + radius;
+          // Centre inside the footprint: push out along the shallowest
+          // penetration axis. The old code always pushed +x, which
+          // shoved the player through the far wall of a deep building
+          // — or into the next block over.
+          const px0 = pos.x - b.x0, px1 = b.x1 - pos.x;
+          const pz0 = pos.z - b.z0, pz1 = b.z1 - pos.z;
+          const minX = Math.min(px0, px1), minZ = Math.min(pz0, pz1);
+          if (minX < minZ) pos.x = px0 < px1 ? b.x0 - radius : b.x1 + radius;
+          else pos.z = pz0 < pz1 ? b.z0 - radius : b.z1 + radius;
         }
       }
     }
@@ -213,7 +221,7 @@ export class City {
         }
         const d = this.districtAt(bx, bz);
         const downtown = d.id === 'downtown';
-        const h = downtown ? 40 + gauss(rng) * 55 : 12 + gauss(rng) * 30;
+        const h = downtown ? gaussRange(rng, 40, 95) : gaussRange(rng, 12, 42);
         const w = range(rng, 22, 40);
         const dep = range(rng, 22, 40);
         const mat = pick(rng, winMats);
@@ -286,6 +294,50 @@ export class City {
       ramp.rotation.x = -0.45;
       ramp.castShadow = true;
       this.group.add(ramp);
+    }
+
+    // Beach boardwalk: planks along the sand, three lifeguard towers
+    // at distinct spots, and umbrellas for the bathers who never come.
+    const plankMat = new THREE.MeshLambertMaterial({ color: 0x9a7a4a });
+    const boardwalk = new THREE.Mesh(new THREE.PlaneGeometry(half * 2 + 200, 8), plankMat);
+    boardwalk.rotation.x = -Math.PI / 2;
+    boardwalk.position.set(0, 0.03, WORLD.beachZ - 6);
+    boardwalk.receiveShadow = true;
+    this.group.add(boardwalk);
+    const towerMat = new THREE.MeshLambertMaterial({ color: 0xe8e4d8 });
+    const towerRoofMat = new THREE.MeshLambertMaterial({ color: 0xd43a2f });
+    for (const tx of pickN(rng, [-240, -160, -80, 0, 80, 160, 240], 3)) {
+      const tower = new THREE.Group();
+      for (const [lx, lz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 4, 0.35), plankMat);
+        leg.position.set(lx, 2, lz);
+        tower.add(leg);
+      }
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 3.6), towerMat);
+      cabin.position.y = 5.3;
+      cabin.castShadow = true;
+      tower.add(cabin);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 1.6, 4), towerRoofMat);
+      roof.position.y = 7.4;
+      roof.rotation.y = Math.PI / 4;
+      tower.add(roof);
+      tower.position.set(tx, 0, WORLD.beachZ - 2);
+      this.group.add(tower);
+    }
+    const umbrellaCols = [0xd43a2f, 0x2f6fd0, 0xf2c230, 0x4a8f3f, 0x7a2fd0];
+    for (let i = 0; i < 10; i++) {
+      const ux = -300 + i * 66 + range(rng, -12, 12);
+      const uz = WORLD.beachZ + 8 + range(rng, -4, 10);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.6, 5), plankMat);
+      pole.position.set(ux, 1.3, uz);
+      this.group.add(pole);
+      const canopy = new THREE.Mesh(
+        new THREE.ConeGeometry(2.2, 0.9, 8),
+        new THREE.MeshLambertMaterial({ color: pick(rng, umbrellaCols) }),
+      );
+      canopy.position.set(ux, 2.8, uz);
+      canopy.castShadow = true;
+      this.group.add(canopy);
     }
 
     // Harbor: piers, crates, boats.

@@ -16,6 +16,7 @@ export class Player {
     this.armor = 0;
     this.stamina = PLAYER.maxStamina;
     this.sprintLocked = false; // sprint blocked until stamina recovers
+    this.medkits = 0; // carried medkits, bought at Iron & Oak (key 5 to use)
     this.cash = PLAYER.startCash;
     this.weapon = 'fists';
     this.ammo = { pistol: 60, shotgun: 20, rifle: 0 };
@@ -78,6 +79,17 @@ export class Player {
 
   heal(amount) { this.health = Math.min(PLAYER.maxHealth, this.health + amount); }
 
+  // Use a carried medkit: 'used', 'empty' (none carried) or 'full'
+  // (already at full health — the kit stays in the pouch). The caller
+  // shows the feedback; this only spends the kit on a real heal.
+  useMedkit() {
+    if (this.medkits <= 0) return 'empty';
+    if (this.health >= PLAYER.maxHealth) return 'full';
+    this.medkits--;
+    this.heal(50);
+    return 'used';
+  }
+
   // Back to a new game: full health, starting cash, starting loadout,
   // on foot at the safehouse. A fresh PLAY uses this; CONTINUE loads a save.
   reset() {
@@ -90,6 +102,7 @@ export class Player {
     this.armor = 0;
     this.stamina = PLAYER.maxStamina;
     this.sprintLocked = false;
+    this.medkits = 0;
     this.cash = PLAYER.startCash;
     this.weapon = 'fists';
     this.ammo = { pistol: 60, shotgun: 20, rifle: 0 };

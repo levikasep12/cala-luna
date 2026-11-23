@@ -110,6 +110,9 @@ class Game {
     $('btn-restart-mission').onclick = () => { this.audio.click(); this.resume(); this.missions.restart(); };
     $('btn-quit-title').onclick = () => { this.audio.click(); this.saveGame(); this.showTitle(); };
     if (!Save.exists()) $('btn-continue').style.display = 'none';
+    // Alt-tabbing mid-job pauses the game: mission timers used to keep
+    // running while the tab was hidden, and Luz came back to a fail.
+    window.addEventListener('blur', () => { if (this.screen === 'play') this.pause(); });
   }
 
   _showOnly(id) {
@@ -197,6 +200,7 @@ class Game {
       crew: Object.keys(this.crew.members),
       owned: [...p.owned],
       ammo: p.ammo,
+      medkits: p.medkits,
       stats: this.stats,
       pos: [p.pos.x, p.pos.z],
     });
@@ -210,11 +214,14 @@ class Game {
     p.armor = save.armor ?? 0;
     this.missions.jobIndex = save.jobIndex ?? 0;
     this.missions.completedJobs = new Set(save.jobsDone || []);
-    this.garage.stored = save.stored || [];
+    // Stored cars may be bare type strings from an older save; the
+    // garage normalises them to {type, health} entries.
+    this.garage.stored = Garage.normalize(save.stored);
     this.territory.held = new Set(save.territory || []);
     for (const id of save.crew || []) this.crew.recruit(id);
     p.owned = new Set(save.owned || ['fists', 'pistol']);
     p.ammo = save.ammo || p.ammo;
+    p.medkits = save.medkits ?? 0;
     Object.assign(this.stats, save.stats || {});
     if (save.pos) {
       p.pos.set(save.pos[0], 0, save.pos[1]);
@@ -263,6 +270,13 @@ class Game {
 
   _shoot() {
     const p = this.player;
+    // Dry fire: an empty gun clicks and says where the ammo is, instead
+    // of silently doing nothing while the player wonders why.
+    if (p.weapon !== 'fists' && (p.ammo[p.weapon] || 0) <= 0) {
+      this.audio.denied();
+      this.hud.setHint('Out of ammo — Iron & Oak sells more');
+      return 0;
+    }
     if (p.weapon === 'fists') {
       // Fists hit through combat.playerShoot alone: the old code also
       // ran a second melee loop here, so every punch landed twice.
@@ -404,12 +418,25 @@ class Game {
       if (input.pressed('Digit3')) this.economy.buy('rifle');
       if (input.pressed('Digit4')) this.economy.buy('armor');
       if (input.pressed('Digit5')) this.economy.buy('medkit');
+      if (input.pressed('Digit6')) this.economy.buy('crate');
       if (this.shopOpen) this.hud.setObjective(this.economy.shopText());
     } else {
       if (input.pressed('Digit1')) p.setWeapon('fists');
       if (input.pressed('Digit2')) p.setWeapon('pistol');
       if (input.pressed('Digit3')) p.setWeapon('shotgun');
       if (input.pressed('Digit4')) p.setWeapon('rifle');
+      if (input.pressed('Digit5')) {
+        const used = p.useMedkit();
+        if (used === 'used') {
+          this.effects.heal(p.pos);
+          this.audio.pickup();
+          this.hud.say('Luz', 'Patched up. Back to it.');
+        } else if (used === 'empty') {
+          this.hud.setHint('No medkits — buy one at Iron & Oak');
+        } else {
+          this.hud.setHint('Already at full health');
+        }
+      }
       if (input.pressed('KeyE')) {
         if (p.inCar) p.exitCar();
         else if (this.economy.nearShop(p) && !this._nearestCar(4.5)) {
@@ -436,8 +463,11 @@ class Game {
       p.car.drive(dt, throttle, steer, input.down('Space'));
       this.city.resolveCollision(p.car.pos, 2.4);
       p.syncFromCar();
-      // Handbrake at speed: tyres complain.
-      if (input.down('Space') && Math.abs(p.car.speed) > 15 && Math.random() < dt * 3) this.audio.skid();
+      // Handbrake at speed: tyres complain, and smoke says so.
+      if (input.down('Space') && Math.abs(p.car.speed) > 15 && Math.random() < dt * 3) {
+        this.audio.skid();
+        this.effects.tireSmoke(p.car.pos);
+      }
       // Car-vs-car bumps.
       for (const other of [...this.traffic.all(), ...this.police.allUnits()]) {
         if (other === p.car) continue;
@@ -490,13 +520,17 @@ class Game {
     this.traffic.ensureCount(16, p.pos);
     this.traffic.update(dt, p.pos, this.city);
     this.pedestrians.ensureCount(24, p.pos);
-    this.pedestrians.update(dt, this.city, p.pos);
+    this.pedestrians.update(dt, this.city, p.pos, [...this.traffic.all(), ...this.police.allUnits()]);
     this.police.update(dt, p, this.time);
+    // The rotor follows the helicopter: thump while the heli is up,
+    // silence the moment it leaves.
+    if (this.police.heli && !this.audio.rotorOn) this.audio.startRotor();
+    else if (!this.police.heli && this.audio.rotorOn) this.audio.stopRotor();
     const combatResult = this.combat.update(dt, p, this.city);
     this.missions.update(dt, p);
     this.sidejobs.update(dt, p);
     this.crew.update(dt);
-    this.territory.update(dt);
+    this.territory.update(dt, p.pos);
     this.weather.update(dt, p.pos);
     this.city.update(dt, this.time);
     this.effects.update(dt);

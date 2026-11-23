@@ -7,18 +7,25 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+/* Low-health vignette: the screen bleeds red at the edges under 35 HP,
+   pulsing with the HUD's update loop. Opacity is set inline from JS. */
+#damage-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 52%, rgba(255,30,20,.55) 100%); }
 #hud-cash { position: absolute; top: 18px; left: 22px; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
 #cash-value { font-size: 34px; font-weight: 800; color: #ffd166; letter-spacing: 1px; }
 #clock-district { font-size: 13px; letter-spacing: 3px; color: #e8ddc4; opacity: .9; }
+#medkit-count { font-size: 13px; letter-spacing: 2px; color: #7ee787; margin-top: 2px; }
+#medkit-count:empty { display: none; }
 #hud-wanted { position: absolute; top: 16px; right: 22px; text-align: right; }
 #wanted-stars { font-size: 26px; letter-spacing: 4px; color: #ffd166; text-shadow: 0 0 10px rgba(255,180,0,.8); }
 #wanted-stars.hot { color: #ff5a4e; animation: blink .5s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .45; } }
-#health-bar, #armor-bar, #stamina-bar { position: relative; width: 170px; height: 12px; margin-top: 6px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; }
-#health-fill, #armor-fill, #stamina-fill { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg, #7ee787, #2da44e); }
+#health-bar, #armor-bar, #stamina-bar, #heat-bar { position: relative; width: 170px; height: 12px; margin-top: 6px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.25); border-radius: 3px; overflow: hidden; }
+#health-fill, #armor-fill, #stamina-fill, #heat-fill { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg, #7ee787, #2da44e); }
 #armor-fill { background: linear-gradient(90deg, #79c0ff, #1f6feb); }
 #stamina-fill { background: linear-gradient(90deg, #ffd166, #ffb703); }
-#health-bar span, #armor-bar span, #stamina-bar span { position: absolute; right: 5px; top: -1px; font-size: 9px; letter-spacing: 2px; color: #fff; }
+#heat-fill { background: linear-gradient(90deg, #ffb703, #ff5a4e); }
+#heat-bar { display: none; }
+#health-bar span, #armor-bar span, #stamina-bar span, #heat-bar span { position: absolute; right: 5px; top: -1px; font-size: 9px; letter-spacing: 2px; color: #fff; }
 #noscript { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: #0b0e14; color: #f2ead8; font-size: 18px; text-align: center; padding: 40px; }
 @media (prefers-reduced-motion: reduce) {
   #wanted-stars.hot { animation: none; }
@@ -51,19 +58,23 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 #busted-sub { font-size: 15px; color: #e8ddc4; margin-top: 8px; }
 
 /* ---------- Start screen ---------- */
-#start-screen { position: fixed; inset: 0; z-index: 10; padding: 9vh 8vw; background: linear-gradient(90deg, rgba(5,8,14,.78) 0%, rgba(5,8,14,.45) 55%, rgba(5,8,14,.05) 100%); }
+/* The start screen fits a 720p window whole: the controls list grew to
+   nine rows, and the old rhythm pushed its last row below the fold.
+   overflow-y stays as a safety net for shorter viewports. */
+#start-screen { position: fixed; inset: 0; z-index: 10; padding: 6vh 8vw; overflow-y: auto; background: linear-gradient(90deg, rgba(5,8,14,.78) 0%, rgba(5,8,14,.45) 55%, rgba(5,8,14,.05) 100%); }
 #start-kicker { font-size: 13px; letter-spacing: 6px; color: #ffd166; }
-#start-title { font-size: clamp(64px, 13vw, 150px); font-weight: 900; letter-spacing: 2px; line-height: .95; color: #fdf6e3; text-shadow: 0 6px 30px rgba(0,0,0,.6); }
+#start-title { font-size: clamp(64px, 13vw, 120px); font-weight: 900; letter-spacing: 2px; line-height: .95; color: #fdf6e3; text-shadow: 0 6px 30px rgba(0,0,0,.6); }
 #start-title span { color: #ffb703; }
-#start-tagline { max-width: 520px; font-size: 17px; line-height: 1.5; color: #e8ddc4; margin: 14px 0 26px; }
-#start-menu { display: flex; flex-direction: column; gap: 10px; width: 300px; }
+#start-tagline { max-width: 520px; font-size: 17px; line-height: 1.5; color: #e8ddc4; margin: 10px 0 18px; }
+#start-menu { display: flex; flex-direction: column; gap: 8px; width: 300px; }
 .menu-btn { pointer-events: auto; cursor: pointer; text-align: left; font: inherit; font-size: 16px; font-weight: 700; letter-spacing: 3px; color: #f2ead8; background: rgba(10,12,18,.6); border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 13px 18px; }
 .menu-btn:hover { border-color: #ffd166; color: #ffd166; }
+.menu-btn:focus-visible { outline: 2px solid #ffd166; outline-offset: 2px; }
 .menu-btn.primary { background: #ffb703; color: #241a02; border-color: #ffb703; }
 .menu-btn.primary:hover { background: #ffd166; color: #241a02; }
-#start-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 26px; width: 420px; margin-top: 26px; font-size: 13px; color: #cfc6ad; }
+#start-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 26px; width: 420px; margin-top: 16px; font-size: 12px; color: #cfc6ad; }
 #start-controls b { color: #ffd166; }
-#start-foot { margin-top: 18px; font-size: 12px; color: #9b937a; }
+#start-foot { margin-top: 12px; font-size: 12px; color: #9b937a; }
 
 /* ---------- Overlays ---------- */
 .overlay { position: fixed; inset: 0; z-index: 11; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgba(5,8,14,.86); padding: 40px; text-align: center; }
@@ -72,3 +83,12 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 .overlay .menu-btn { width: 260px; text-align: center; }
 #stats-body, #pause-stats { font-size: 15px; line-height: 1.9; color: #e8ddc4; text-align: left; }
 #stats-body b, #pause-stats b { color: #ffd166; }
+
+/* Narrow windows: the minimap and the objective bar shrink instead of
+   crowding the road, and the controls list goes single-column. */
+@media (max-width: 900px) {
+  #hud-minimap { width: 150px; height: 150px; }
+  #hud-objective { min-width: 0; max-width: 90vw; }
+  #start-controls { width: 300px; grid-template-columns: 1fr; }
+  #banner { font-size: 30px; }
+}

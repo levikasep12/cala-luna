@@ -44,3 +44,22 @@ export function weighted(rng, items) {
 export function gauss(rng) {
   return (rng() + rng() + rng()) / 3;
 }
+
+// Bell-curve value in [min, max]: most draws land near the middle.
+// Building heights use this — a skyline of mid-rises with a few towers.
+export function gaussRange(rng, min, max) {
+  return min + gauss(rng) * (max - min);
+}
+
+// Sample n distinct entries, in random order. Throws when the array
+// cannot supply n — a silent short sample would place two landmarks
+// on the same spot.
+export function pickN(rng, arr, n) {
+  if (n > arr.length) throw new Error(`pickN: asked for ${n} of ${arr.length}`);
+  const out = arr.slice();
+  for (let i = 0; i < n; i++) {
+    const j = i + Math.floor(rng() * (out.length - i));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out.slice(0, n);
+}

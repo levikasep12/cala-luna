@@ -24,8 +24,21 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => this.keysDown.delete(e.code));
     window.addEventListener('blur', () => { this.keysDown.clear(); this.pressedQueue.clear(); this.dragging = false; });
+    // A hidden tab gets no keyup events: without this, alt-tabbing
+    // mid-drive left W stuck down and Luz drove on alone.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { this.keysDown.clear(); this.pressedQueue.clear(); this.dragging = false; }
+    });
+    // Right-drag orbits the camera like left-drag; the context menu
+    // only ever got in the way of that.
+    window.addEventListener('contextmenu', (e) => {
+      if (e.target.closest('#game-root, canvas')) e.preventDefault();
+    });
     window.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button')) return;
+      // Clicks on menus and overlays are UI, not gameplay: dragging
+      // on the title screen used to swing the chase yaw before play
+      // even started.
+      if (e.target.closest('button, .overlay, #start-screen, a')) return;
       this.mouseDown = true;
       this.mouseClicked = true;
       this.dragging = true;

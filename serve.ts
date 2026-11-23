@@ -2,7 +2,8 @@
 // only), so the game can be played locally without a build step:
 //   node serve.ts [--port 8080] [--host 127.0.0.1]
 // Serves game/ at http://localhost:8080 with the MIME types a browser
-// game needs. A development convenience, not a web server.
+// game needs. A development convenience, not a web server. --port 0
+// picks a free port and prints it; every request is logged to the console.
 
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -13,7 +14,8 @@ const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
 const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
-const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
+// 0 is valid: the OS picks a free port, and the listen callback prints it.
+const port = Number.isInteger(requested) && requested >= 0 && requested < 65536 ? requested : 8080;
 const hostIndex = args.indexOf('--host');
 const host = hostIndex === -1 ? undefined : (args[hostIndex + 1] || undefined);
 
@@ -34,11 +36,22 @@ const MIME: Record<string, string> = {
 };
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  let pathname = decodeURIComponent(url.pathname);
+  const log = (status: number, path: string) => console.log(`${request.method} ${path} -> ${status}`);
+  let pathname: string;
+  try {
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    // A malformed % sequence used to throw out of the handler and kill
+    // the whole server; now it is just a 400.
+    log(400, request.url ?? '/');
+    response.writeHead(400).end('bad request');
+    return;
+  }
   if (pathname.endsWith('/')) pathname += 'index.html';
   const file = resolve(join(root, normalize(pathname)));
   if (file !== root && !file.startsWith(root + sep)) {
+    log(403, pathname);
     response.writeHead(403).end('forbidden');
     return;
   }
@@ -48,9 +61,11 @@ const server = createServer((request, response) => {
     if (!stats.isFile()) throw new Error('not a file');
     size = stats.size;
   } catch {
+    log(404, pathname);
     response.writeHead(404).end('not found');
     return;
   }
+  log(200, pathname);
   response.writeHead(200, {
     'content-type': MIME[extname(file)] ?? 'application/octet-stream',
     'content-length': size,
@@ -73,4 +88,9 @@ server.on('error', (err) => {
   process.exitCode = 1;
 });
 
-server.listen(port, host, () => console.log(`CALA LUNA at http://${host ?? 'localhost'}:${port}`));
+server.listen(port, host, () => {
+  // With --port 0 the OS chose the port: report the real one.
+  const addr = server.address();
+  const actual = typeof addr === 'object' && addr ? addr.port : port;
+  console.log(`CALA LUNA at http://${host ?? 'localhost'}:${actual}`);
+});

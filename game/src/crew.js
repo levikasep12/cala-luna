@@ -2,7 +2,7 @@
 // Marco repairs the car anywhere; Ines wipes a wanted star. Each
 // ability has a cooldown, shown in the HUD. Press Q to use the ready one.
 
-import { CREW } from './config.js';
+import { CREW, PLAYER } from './config.js';
 
 export class Crew {
   constructor(game) {
@@ -34,6 +34,11 @@ export class Crew {
     // a repair, even when Marco is also ready.
     if (this.game.police && this.game.police.stars >= 3
       && this.members.ines && this.members.ines.readyIn <= 0) return 'ines';
+    // Then the getaway: in a car with heat on, Dante's nitro beats a
+    // repair — distance is worth more than a fresh bumper.
+    if (this.game.player && this.game.player.inCar
+      && this.game.police && this.game.police.stars >= 1
+      && this.members.dante && this.members.dante.readyIn <= 0) return 'dante';
     for (const id of Object.keys(this.members)) {
       if (this.members[id].readyIn <= 0) return id;
     }
@@ -54,6 +59,18 @@ export class Crew {
     } else if (id === 'ines') {
       g.police.addStars(-1);
       g.hud.say('Ines', 'Cameras looped, plates spoofed. One star, gone.');
+      g.audio.pickup();
+    } else if (id === 'dante') {
+      if (g.player.inCar && g.player.car) {
+        g.player.car.boost(3);
+        g.hud.say('Dante', 'Nitro! Hold on tight.');
+      } else {
+        // On foot there is no engine to boost: Dante patches Luz up
+        // and she gets her breath back instead.
+        g.player.heal(25);
+        g.player.stamina = PLAYER.maxStamina;
+        g.hud.say('Dante', 'Caught your breath? Good — run.');
+      }
       g.audio.pickup();
     }
     return true;

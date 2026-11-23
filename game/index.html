@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="CALA LUNA — a sun-soaked open-world crime game. Luz Vega drives for hire across five districts: story jobs, a crew, territory, and five stars of heat.">
 <meta name="theme-color" content="#0b0e14">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
 <title>CALA LUNA — a sun-soaked open-world crime game</title>
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
@@ -17,15 +19,18 @@
 
 <!-- HUD -->
 <div id="hud" class="hidden">
+  <div id="damage-vignette"></div>
   <div id="hud-cash">
     <div id="cash-value">$0</div>
     <div id="clock-district">18:00 · OLD TOWN</div>
+    <div id="medkit-count"></div>
   </div>
   <div id="hud-wanted">
     <div id="wanted-stars">☆☆☆☆☆</div>
     <div id="health-bar"><div id="health-fill"></div><span>HEALTH</span></div>
     <div id="armor-bar"><div id="armor-fill"></div><span>ARMOR</span></div>
     <div id="stamina-bar"><div id="stamina-fill"></div><span>STAMINA</span></div>
+    <div id="heat-bar"><div id="heat-fill"></div><span>COOLING</span></div>
   </div>
   <div id="hud-objective">
     <div id="objective-label">OBJECTIVE</div>
@@ -76,6 +81,8 @@
     <div><b>Q</b> crew ability</div><div><b>Esc</b> pause</div>
     <div><b>M</b> mute</div><div><b>R</b> restart mission</div>
     <div><b>H</b> horn</div><div><b>C</b> camera view</div>
+    <div><b>T</b> taxi fare</div><div><b>P</b> package run</div>
+    <div><b>G</b> garage</div><div><b>5</b> use medkit</div>
   </div>
   <div id="start-foot">Seeded city: add ?seed=N to the address for a different Cala Luna.</div>
 </div>
