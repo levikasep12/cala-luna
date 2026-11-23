@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { WORLD, DISTRICTS, SHOPS, STUNTS } from './config.js';
-import { makeRng, pick, range, rangeInt } from './random.js';
+import { makeRng, pick, range, rangeInt, chance } from './random.js';
 
 const PALETTE = [0xd8c49a, 0xc9a06c, 0xb08a5e, 0x9db3c8, 0xc98d7a, 0xa8b89a, 0xd9c9a3, 0x8fa3b8];
 
@@ -149,7 +149,10 @@ export class City {
       rz.material.map.repeat.set(1, half * 2 / 16);
       rz.material.map.needsUpdate = true;
       rz.rotation.x = -Math.PI / 2;
-      rz.rotation.z = Math.PI / 2;
+      // No rotation.z: with rotation.x alone the plane's long axis maps
+      // to world z (an avenue). An extra rotation.z = PI/2 would turn
+      // it back into a street along x and the city would have no
+      // north-south roads at all.
       rz.position.set(s, 0.02, 0);
       rz.receiveShadow = true;
       this.group.add(rz);

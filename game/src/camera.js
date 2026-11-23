@@ -40,8 +40,8 @@ export class Camera {
   update(dt, targetPos, targetHeading, speedKmh, inCar) {
     // Chase: behind the target's heading, blended toward the orbit yaw.
     const back = targetHeading + Math.PI + this.yaw;
-    const wantDist = inCar ? 12 + Math.min(6, speedKmh / 30) : 9;
-    const wantHeight = inCar ? 5.2 : 4.4;
+    const wantDist = (inCar ? 12 + Math.min(6, speedKmh / 30) : 9) + (this.distBoost || 0);
+    const wantHeight = (inCar ? 5.2 : 4.4) + (this.heightBoost || 0);
     const want = new THREE.Vector3(
       targetPos.x + Math.cos(back) * wantDist * Math.cos(this.pitch),
       targetPos.y + wantHeight + Math.sin(this.pitch) * wantDist * 0.6,

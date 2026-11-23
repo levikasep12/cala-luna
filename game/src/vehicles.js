@@ -137,15 +137,19 @@ export class Vehicle {
   }
 }
 
-// A police helicopter: hovers above a target, shines a spotlight cone.
+// A police helicopter: hovers above a target, shines a searchlight pool.
 export class Helicopter {
-  constructor(scene) {
+  constructor(scene, start = null) {
     this.scene = scene;
     this.group = new THREE.Group();
-    const bodyMat = new THREE.MeshPhongMaterial({ color: 0x22303f, shininess: 40 });
+    const bodyMat = new THREE.MeshPhongMaterial({ color: 0xd8dce2, shininess: 40 });
     const body = new THREE.Mesh(new THREE.BoxGeometry(5, 2, 2.4), bodyMat);
     body.castShadow = true;
     this.group.add(body);
+    // Red cheatline so the light body reads as a police heli.
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.5, 2.5), new THREE.MeshLambertMaterial({ color: 0xc03030 }));
+    stripe.position.y = -0.3;
+    this.group.add(stripe);
     const tail = new THREE.Mesh(new THREE.BoxGeometry(4, 0.8, 0.8), bodyMat);
     tail.position.set(-4, 0.4, 0);
     this.group.add(tail);
@@ -160,26 +164,30 @@ export class Helicopter {
     this.rotor.add(blade2);
     this.rotor.position.y = 2.1;
     this.group.add(this.rotor);
-    // Spotlight cone
-    const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(9, 55, 16, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xfff6c0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    cone.position.y = -28;
-    cone.rotation.x = Math.PI;
-    this.group.add(cone);
-    const spot = new THREE.Mesh(new THREE.CircleGeometry(7, 16), new THREE.MeshBasicMaterial({ color: 0xfff6c0, transparent: true, opacity: 0.25 }));
+    // Searchlight pool on the ground below (no cone: a cone reads as a
+    // solid wedge from the chase camera). The heli itself is the signal.
+    const spot = new THREE.Mesh(new THREE.CircleGeometry(6, 16), new THREE.MeshBasicMaterial({ color: 0xfff6c0, transparent: true, opacity: 0.22 }));
     spot.rotation.x = -Math.PI / 2;
-    spot.position.y = -54;
+    spot.position.y = -13;
     this.group.add(spot);
-    this.group.position.set(0, 55, 0);
+    this.hoverHeight = 15;
+    // Spawn above the target, not at the world origin.
+    const sx = start ? start.x : 0;
+    const sz = start ? start.z : 0;
+    this.group.position.set(sx + 25, this.hoverHeight, sz + 6);
     scene.add(this.group);
   }
 
   update(dt, target, time) {
     this.rotor.rotation.y += dt * 22;
-    const want = new THREE.Vector3(target.x + Math.sin(time * 0.4) * 12, 55, target.z + Math.cos(time * 0.3) * 12);
-    this.group.position.lerp(want, Math.min(1, dt * 1.2));
+    // Hover ahead of the target, slightly to the side, close and low
+    // enough for the chase camera to see it in the top of the frame.
+    const want = new THREE.Vector3(
+      target.x + 25 + Math.sin(time * 0.4) * 8,
+      this.hoverHeight,
+      target.z + 6 + Math.cos(time * 0.3) * 8,
+    );
+    this.group.position.lerp(want, Math.min(1, dt * 1.8));
     this.group.rotation.y = Math.atan2(target.x - this.group.position.x, target.z - this.group.position.z);
   }
 

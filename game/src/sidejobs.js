@@ -22,7 +22,7 @@ export class SideJobs {
     const dz = Math.round((Math.random() * 10 - 5)) * 60;
     const fare = 120 + Math.round(Math.hypot(dx - px, dz - pz) / 10) * 15;
     this.taxi = { pickup: [px, pz], dropoff: [dx, dz], fare, state: 'pickup' };
-    g.hud.setObjective(`Taxi fare: pick up at (${px}, ${pz}) — $${fare}`);
+    g.hud.setObjective(`Taxi fare: pick up in ${g.city.districtAt(px, pz).name} — $${fare}`);
     g.hud.say('Dispatcher', 'Fare waiting. Pick them up and drive smooth — tips for fast drops.');
     return true;
   }
@@ -33,7 +33,7 @@ export class SideJobs {
     const dx = Math.round((Math.random() * 10 - 5)) * 60;
     const dz = Math.round((Math.random() * 10 - 5)) * 60;
     this.package = { dropoff: [dx, dz], reward: 350, timer: 100 };
-    g.hud.setObjective(`Package run: deliver to (${dx}, ${dz}) in 100s — $350`);
+    g.hud.setObjective(`Package run: deliver to ${g.city.districtAt(dx, dz).name} in 100s — $350`);
     return true;
   }
 
@@ -63,7 +63,7 @@ export class SideJobs {
       if (d < 9) {
         if (t.state === 'pickup') {
           t.state = 'dropoff';
-          g.hud.setObjective(`Taxi fare: drop off at (${t.dropoff[0]}, ${t.dropoff[1]}) — $${t.fare}`);
+          g.hud.setObjective(`Taxi fare: drop off in ${g.city.districtAt(t.dropoff[0], t.dropoff[1]).name} — $${t.fare}`);
           g.hud.say('Passenger', 'The Marina, please. And step on it — I tip for speed.');
         } else {
           player.cash += t.fare;

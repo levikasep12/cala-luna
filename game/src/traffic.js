@@ -31,13 +31,23 @@ export class Traffic {
     const z = sz + pick(rng, [-1, 1]) * (40 + rng() * 140);
     const alongX = rng() < 0.5;
     const dir = rng() < 0.5 ? 1 : -1;
-    const car = new Vehicle(this.scene, pick(rng, TRAFFIC_TYPES),
-      alongX ? x : sx, alongX ? sz : z, alongX ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? -Math.PI / 2 : Math.PI / 2));
+    this.spawnAt(
+      alongX ? x : sx, alongX ? sz : z,
+      alongX ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? -Math.PI / 2 : Math.PI / 2),
+      pick(rng, TRAFFIC_TYPES),
+    );
+  }
+
+  // Place one car exactly — for staged scenes and scripted moments.
+  spawnAt(x, z, heading, type = 'sedan') {
+    const rng = this.rng;
+    const car = new Vehicle(this.scene, type, x, z, heading);
     car.driver = 'traffic';
     car.cruise = 10 + rng() * 6;
     car.nextTurn = 4 + rng() * 8;
     car.lane = pick(rng, [-3.2, 3.2]);
     this.cars.push(car);
+    return car;
   }
 
   update(dt, playerPos, city) {

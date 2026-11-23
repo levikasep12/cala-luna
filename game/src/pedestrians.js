@@ -30,6 +30,14 @@ export class Pedestrians {
     const z = pick(rng, streets) + pick(rng, [-1, 1]) * (8 + rng() * 4);
     const px = x + range(rng, -120, 120);
     const pz = z + range(rng, -120, 120);
+    this._makePed(px, pz);
+  }
+
+  // Place one pedestrian exactly — for staged scenes.
+  spawnAt(x, z) { this._makePed(x, z); }
+
+  _makePed(px, pz) {
+    const rng = this.rng;
     const g = new THREE.Group();
     const shirt = new THREE.MeshLambertMaterial({ color: pick(rng, SHIRTS) });
     const pants = new THREE.MeshLambertMaterial({ color: pick(rng, PANTS) });

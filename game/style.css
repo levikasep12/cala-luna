@@ -29,7 +29,7 @@ body { font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; col
 #vehicle-name { font-size: 12px; letter-spacing: 1px; color: #cfc6ad; margin-top: 2px; }
 #hud-weapon { position: absolute; right: 24px; bottom: 118px; font-size: 14px; letter-spacing: 2px; text-shadow: 0 2px 5px rgba(0,0,0,.8); }
 #weapon-name { color: #ffd166; font-weight: 700; }
-#hud-crew { position: absolute; left: 258px; bottom: 26px; font-size: 13px; letter-spacing: 1px; background: rgba(10,12,18,.55); padding: 7px 12px; border-radius: 6px; }
+#hud-crew { position: absolute; left: 22px; top: 92px; font-size: 13px; letter-spacing: 1px; background: rgba(10,12,18,.55); padding: 7px 12px; border-radius: 6px; }
 #dialogue-bar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); max-width: 640px; background: rgba(8,10,15,.72); border-radius: 8px; padding: 10px 18px; font-size: 15px; text-align: center; }
 #dialogue-speaker { color: #ffd166; font-weight: 700; margin-right: 8px; }
 #banner { position: absolute; top: 34%; left: 50%; transform: translateX(-50%); font-size: 44px; font-weight: 900; letter-spacing: 6px; color: #ffd166; text-shadow: 0 4px 24px rgba(0,0,0,.8); text-align: center; }

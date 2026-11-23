@@ -52,7 +52,7 @@ export class Effects {
     m.position.y = 1.45;
     m.lookAt(m.position.clone().add(fwd));
     this.scene.add(m);
-    this.flashes.push({ mesh: m, life: 0.06 });
+    this.flashes.push({ mesh: m, life: 0.09 });
   }
 
   tracer(from, to) {
@@ -64,7 +64,7 @@ export class Effects {
     m.position.copy(from).addScaledVector(dir, 0.5);
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
     this.scene.add(m);
-    this.tracers.push({ mesh: m, life: 0.08 });
+    this.tracers.push({ mesh: m, life: 0.15 });
   }
 
   update(dt) {

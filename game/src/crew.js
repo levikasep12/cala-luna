@@ -15,6 +15,8 @@ export class Crew {
     const def = CREW.find((c) => c.id === id);
     if (!def || this.members[id]) return;
     this.members[id] = { def, readyIn: 0 };
+    // The HUD may not exist yet when the constructor recruits Marco.
+    if (!this.game.hud) return;
     this.game.hud.say(def.name.split('"')[1] || def.name, `I'm in, Luz. ${def.ability} — say the word.`);
     this.game.hud.showBanner(`${def.name.split(' ')[0].toUpperCase()} JOINED THE CREW`);
   }

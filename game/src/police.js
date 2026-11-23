@@ -22,6 +22,7 @@ export class Police {
     this.spawnTimer = 0;
     this.sirenTimer = 0;
     this.busted = false;
+    this.bustedTimer = 0;
   }
 
   addStars(n, reason) {
@@ -70,6 +71,10 @@ export class Police {
     const ax = playerPos.x + Math.cos(playerHeading) * ahead;
     const az = playerPos.z - Math.sin(playerHeading) * ahead;
     const near = this.city.nearestStreet(ax, az);
+    // Never stack two roadblocks on the same intersection.
+    for (const r of this.roadblocks) {
+      if (Math.hypot(r.x - near.x, r.z - near.z) < 40) return;
+    }
     const cars = [];
     const perp = playerHeading + Math.PI / 2;
     for (const off of [-4.5, 4.5]) {
@@ -121,18 +126,19 @@ export class Police {
       if (tier.roadblocks > this.roadblocks.length && player.inCar && Math.random() < dt * 0.25) {
         this._spawnRoadblock(player.pos, player.heading);
       }
-      if (tier.heli && !this.heli) this.heli = new Helicopter(this.scene);
+      if (tier.heli && !this.heli) this.heli = new Helicopter(this.scene, player.pos);
       if (!tier.heli && this.heli) { this.heli.dispose(); this.heli = null; }
     } else if (this.heli) {
       this.heli.dispose();
       this.heli = null;
     }
 
-    // Chase AI: seek the player, ram on contact.
+    // Chase AI: seek the player, ram on contact. Parked units hold.
     const driveUnit = (u, aggression) => {
       const dx = player.pos.x - u.pos.x;
       const dz = player.pos.z - u.pos.z;
       const dist = Math.hypot(dx, dz);
+      if (u.parked) return dist;
       const want = Math.atan2(-dz, dx);
       let diff = want - u.heading;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -165,10 +171,15 @@ export class Police {
 
     if (this.heli) this.heli.update(dt, player.pos, time);
 
-    // BUSTED: on foot, police very close, player slow.
-    this.busted = false;
-    if (this.stars > 0 && !player.inCar && nearestDist < 4 && player.health > 0) {
-      this.busted = true;
+    // BUSTED: on foot, police very close, player slow — but only after
+    // a 1.2s grace window, so a cop brushing past doesn't end the run
+    // and the player gets a moment to sprint away.
+    if (this.stars > 0 && !player.inCar && nearestDist < 4 && player.speedKmh < 12 && player.health > 0) {
+      this.bustedTimer += dt;
+      this.busted = this.bustedTimer > 1.2;
+    } else {
+      this.bustedTimer = 0;
+      this.busted = false;
     }
     return { nearestDist };
   }
