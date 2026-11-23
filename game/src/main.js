@@ -1,10 +1,14 @@
 // CALA LUNA — main: the game itself. One Game object owns the
-// renderer, the world and every system, and runs the frame loop: title
-// screen, pause screen, and the play frame in four phases — read the
-// keys, move Luz (on foot or behind the wheel), tick every system, then
-// point the camera and refresh the HUD. Everything the player can do —
-// walk, drive, carjack, shoot, shop, store, race, save — is a verb
-// here, wired to the systems that carry it out.
+// renderer, the world and every system, and runs the frame loop. Each
+// screen — title, pause, play — has its own frame handler, picked from
+// a dispatch table every tick. The play frame runs a fixed pipeline:
+// clocks, the death card, keys, movement, the world tick, the
+// objective, the death check, then camera and HUD. Keys come from a
+// binding table: one row per key, a mode (any, shop, play), and the
+// method it calls — so the whole control scheme reads as a list.
+// Everything the player can do — walk, drive, carjack, shoot, shop,
+// store, race, save — is a verb here, wired to the systems that carry
+// it out.
 
 import * as THREE from 'three';
 import { WORLD, PLAYER, SHOPS, RACES, SAVE_KEY } from './config.js';
@@ -34,16 +38,16 @@ const params = new URLSearchParams(window.location.search);
 const SEED = Number(params.get('seed')) || WORLD.seed;
 const SHOT = params.get('shot');
 
-const SCREENS = ['start-screen', 'howto-screen', 'stats-screen', 'pause-screen'];
-const AUTOSAVE_EVERY = 30; // seconds between autosaves
-const DEATH_PAUSE = 2.6; // seconds on the BUSTED / WASTED card
+const SCREEN_IDS = ['start-screen', 'howto-screen', 'stats-screen', 'pause-screen'];
+const AUTOSAVE_SEC = 30; // seconds between autosaves
+const DEATH_CARD_SEC = 2.6; // seconds on the BUSTED / WASTED card
 
 class Game {
   constructor() {
     this.screen = 'title';
     this.time = 0;
     this.fps = 60;
-    this.stats = this._newStats();
+    this.stats = this._blankStats();
     this.worldCars = [];
     this.shopOpen = false;
     this.deadTimer = 0;
@@ -51,13 +55,20 @@ class Game {
     this.pedHitCooldown = 0;
     this.crashCooldown = 0;
     this._lastCash = PLAYER.startCash; // cashEarned counts every gain
+    this._keys = this._keyBindings();
+    this._screens = {
+      title: (dt) => this._titleFrame(dt),
+      menu: (dt) => this._titleFrame(dt),
+      pause: () => this._pauseFrame(),
+      play: (dt) => this._playFrame(dt),
+    };
 
-    this._createRenderer();
-    this._createSystems();
+    this._makeRenderer();
+    this._makeWorld();
     this.traffic.ensureCount(16, this.player.pos);
     this.pedestrians.ensureCount(24, this.player.pos);
     installDebugHook(this);
-    this._bindMenus();
+    this._wireMenus();
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
 
@@ -68,7 +79,7 @@ class Game {
     }
   }
 
-  _createRenderer() {
+  _makeRenderer() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -79,7 +90,7 @@ class Game {
 
   // Every system, built in dependency order: the world first, then the
   // things that live in it, then the things that watch them.
-  _createSystems() {
+  _makeWorld() {
     this.scene = new THREE.Scene();
     this.input = new Input();
     this.audio = new Audio();
@@ -102,7 +113,7 @@ class Game {
   }
 
   // ---------- screens ----------
-  _newStats() {
+  _blankStats() {
     return {
       cashEarned: 0, missionsDone: 0, fares: 0, packages: 0, racesWon: 0,
       stunts: 0, carsStolen: 0, kills: 0, busted: 0, wasted: 0, playSeconds: 0,
@@ -110,31 +121,33 @@ class Game {
     };
   }
 
-  _bindMenus() {
+  _wireMenus() {
     const $ = (id) => document.getElementById(id);
-    const on = (id, fn) => { $(id).onclick = fn; };
     const bootAudio = () => { this.audio.init(); this.audio.resume(); this.audio.click(); };
-    on('btn-play', () => { bootAudio(); Save.clear(); this.startGame({ fresh: true }); });
-    on('btn-continue', () => { bootAudio(); this.startGame({ fresh: false }); });
-    on('btn-howto', () => { this.audio.click(); this._showOnly('howto-screen'); });
-    on('btn-howto-back', () => { this.audio.click(); this._showOnly('start-screen'); });
-    on('btn-stats', () => {
-      this.audio.click();
-      $('stats-body').innerHTML = Save.statsText(this.stats);
-      this._showOnly('stats-screen');
-    });
-    on('btn-stats-back', () => { this.audio.click(); this._showOnly('start-screen'); });
-    on('btn-resume', () => { this.audio.click(); this.resume(); });
-    on('btn-restart-mission', () => { this.audio.click(); this.resume(); this.missions.restart(); });
-    on('btn-quit-title', () => { this.audio.click(); this.saveGame(); this.showTitle(); });
+    const buttons = [
+      ['btn-play', () => { bootAudio(); Save.clear(); this.startGame({ fresh: true }); }],
+      ['btn-continue', () => { bootAudio(); this.startGame({ fresh: false }); }],
+      ['btn-howto', () => { this.audio.click(); this._show('howto-screen'); }],
+      ['btn-howto-back', () => { this.audio.click(); this._show('start-screen'); }],
+      ['btn-stats', () => {
+        this.audio.click();
+        $('stats-body').innerHTML = Save.statsText(this.stats);
+        this._show('stats-screen');
+      }],
+      ['btn-stats-back', () => { this.audio.click(); this._show('start-screen'); }],
+      ['btn-resume', () => { this.audio.click(); this.resume(); }],
+      ['btn-restart-mission', () => { this.audio.click(); this.resume(); this.missions.restart(); }],
+      ['btn-quit-title', () => { this.audio.click(); this.saveGame(); this.showTitle(); }],
+    ];
+    for (const [id, fn] of buttons) $(id).onclick = fn;
     if (!Save.exists()) $('btn-continue').style.display = 'none';
     // Alt-tabbing mid-job pauses the game: mission timers used to keep
     // running while the tab was hidden, and Luz came back to a fail.
     window.addEventListener('blur', () => { if (this.screen === 'play') this.pause(); });
   }
 
-  _showOnly(id) {
-    for (const s of SCREENS) {
+  _show(id) {
+    for (const s of SCREEN_IDS) {
       document.getElementById(s).classList.toggle('hidden', s !== id);
     }
     if (id) this.screen = id === 'start-screen' ? 'title' : id === 'pause-screen' ? 'pause' : 'menu';
@@ -143,19 +156,19 @@ class Game {
   showTitle() {
     this.screen = 'title';
     this.hud.hide();
-    this._showOnly('start-screen');
+    this._show('start-screen');
     this.audio.stopMusic();
     this.audio.stopEngine();
   }
 
   startGame({ fresh, skipIntro = false }) {
-    if (fresh) this._freshState();
+    if (fresh) this._newGame();
     else {
-      this._applySave(Save.load());
+      this._restore(Save.load());
       this._lastCash = this.player.cash;
     }
     this.screen = 'play';
-    this._showOnly(null);
+    this._show(null);
     this.hud.show();
     this.audio.init();
     this.audio.resume();
@@ -173,7 +186,7 @@ class Game {
 
   // A new game starts clean: a second PLAY in one page load used to
   // keep the old crew, territory, garage and mission progress.
-  _freshState() {
+  _newGame() {
     this.player.reset();
     this.missions.reset();
     this.crew.reset();
@@ -183,7 +196,7 @@ class Game {
     this.police.setStars(0);
     this.police.clearAll();
     this.combat.clearEnemies();
-    this.stats = this._newStats();
+    this.stats = this._blankStats();
     this.shopOpen = false;
     this.deadTimer = 0;
     this._lastCash = PLAYER.startCash;
@@ -197,20 +210,26 @@ class Game {
       ['Crew', `${this.crew.count} members`],
       ['Garage', this.garage.statusText()],
     ]);
-    this._showOnly('pause-screen');
+    this._show('pause-screen');
   }
 
   resume() {
     if (this.screen !== 'pause') return;
     this.screen = 'play';
-    this._showOnly(null);
+    this._show(null);
     this.hud.show();
   }
 
   // ---------- save ----------
   saveGame() {
+    Save.store(this._snapshot());
+  }
+
+  // Everything a continue needs: wallet, body, progress, garage,
+  // turf, crew, loadout, lifetime stats, and where Luz stood.
+  _snapshot() {
     const p = this.player;
-    Save.store({
+    return {
       cash: p.cash,
       health: p.health,
       armor: p.armor,
@@ -224,10 +243,10 @@ class Game {
       medkits: p.medkits,
       stats: this.stats,
       pos: [p.pos.x, p.pos.z],
-    });
+    };
   }
 
-  _applySave(save) {
+  _restore(save) {
     if (!save) return;
     const p = this.player;
     p.cash = save.cash ?? PLAYER.startCash;
@@ -250,8 +269,157 @@ class Game {
     }
   }
 
+  // ---------- keys ----------
+  // The whole control scheme as a table: code, the mode it lives in
+  // ('any' = always live, 'shop' / 'play' = only in that mode), the
+  // method it calls, and its argument. Rows run in order, so Escape
+  // still wins the frame over everything below it.
+  _keyBindings() {
+    return [
+      { code: 'Escape', mode: 'any', method: '_escape' },
+      { code: 'KeyM', mode: 'any', method: '_toggleMute' },
+      { code: 'KeyQ', mode: 'any', method: '_useAbility' },
+      { code: 'KeyH', mode: 'any', method: '_honk' },
+      { code: 'KeyC', mode: 'any', method: '_cycleCamera' },
+      { code: 'KeyR', mode: 'any', method: '_restartOrRace' },
+      { code: 'KeyT', mode: 'any', method: '_hailTaxi' },
+      { code: 'KeyP', mode: 'any', method: '_runPackage' },
+      { code: 'KeyG', mode: 'any', method: '_garageKey' },
+      { code: 'KeyE', mode: 'shop', method: '_closeShop' },
+      { code: 'Digit1', mode: 'shop', method: '_buy', arg: 'pistol' },
+      { code: 'Digit2', mode: 'shop', method: '_buy', arg: 'shotgun' },
+      { code: 'Digit3', mode: 'shop', method: '_buy', arg: 'rifle' },
+      { code: 'Digit4', mode: 'shop', method: '_buy', arg: 'armor' },
+      { code: 'Digit5', mode: 'shop', method: '_buy', arg: 'medkit' },
+      { code: 'Digit6', mode: 'shop', method: '_buy', arg: 'crate' },
+      { code: 'Digit1', mode: 'play', method: '_arm', arg: 'fists' },
+      { code: 'Digit2', mode: 'play', method: '_arm', arg: 'pistol' },
+      { code: 'Digit3', mode: 'play', method: '_arm', arg: 'shotgun' },
+      { code: 'Digit4', mode: 'play', method: '_arm', arg: 'rifle' },
+      { code: 'Digit5', mode: 'play', method: '_useMedkit' },
+      { code: 'KeyE', mode: 'play', method: '_interact' },
+      { code: 'KeyF', mode: 'play', method: '_carjackKey' },
+    ];
+  }
+
+  // Walk the binding table. Returns true when the frame should end
+  // here (Escape paused the game). The mode is snapshotted at the
+  // start of the frame: closing the shop with E must not cancel a
+  // Digit pressed in the same frame, and opening it must not cancel F.
+  _handleKeys() {
+    const inShop = this.shopOpen;
+    for (const b of this._keys) {
+      if (b.mode === 'shop' && !inShop) continue;
+      if (b.mode === 'play' && inShop) continue;
+      if (!this.input.pressed(b.code)) continue;
+      if (this[b.method](b.arg) === 'halt') return true;
+    }
+    if (this.shopOpen) this.hud.setObjective(this.economy.shopText());
+    this._poiHint();
+    return false;
+  }
+
+  _escape() {
+    this.pause();
+    return 'halt';
+  }
+
+  _toggleMute() {
+    const muted = this.audio.toggleMute();
+    this.hud.setHint(muted ? 'Sound muted' : 'Sound on');
+  }
+
+  _useAbility() { this.crew.useAbility(); }
+
+  _honk() {
+    if (!this.player.inCar) return;
+    this.audio.horn();
+    this.pedestrians.scareAt(this.player.pos, 15);
+  }
+
+  _cycleCamera() {
+    const view = this.camera.cycleView();
+    this.hud.setHint(`Camera: ${view}`);
+  }
+
+  // R restarts the live mission, or starts the race whose first
+  // checkpoint Luz is standing near.
+  _restartOrRace() {
+    const p = this.player;
+    if (this.missions.active) {
+      this.missions.restart();
+      return;
+    }
+    const race = RACES.find((r) => Math.hypot(p.pos.x - r.checkpoints[0][0], p.pos.z - r.checkpoints[0][1]) < 20);
+    if (race) this.sidejobs.startRace(race.id);
+  }
+
+  _hailTaxi() { this.sidejobs.startTaxi(); }
+
+  _runPackage() { this.sidejobs.startPackage(); }
+
+  // G at the garage: store the car Luz is driving, or take the last
+  // stored one back out.
+  _garageKey() {
+    const p = this.player;
+    if (!this.garage.nearGarage(p)) return;
+    if (p.inCar) this.garage.storeCurrentCar();
+    else if (this.garage.stored.length) this.garage.takeOut(this.garage.stored.length - 1);
+  }
+
+  _closeShop() {
+    this.shopOpen = false;
+    this.hud.clearObjective();
+  }
+
+  _buy(item) { this.economy.buy(item); }
+
+  _arm(weapon) { this.player.setWeapon(weapon); }
+
+  // 5 spends a medkit from the pouch, with a word for each outcome.
+  _useMedkit() {
+    const p = this.player;
+    const used = p.useMedkit();
+    if (used === 'used') {
+      this.effects.heal(p.pos);
+      this.audio.pickup();
+      this.hud.say('Luz', 'Patched up. Back to it.');
+    } else if (used === 'empty') {
+      this.hud.setHint('No medkits — buy one at Iron & Oak');
+    } else {
+      this.hud.setHint('Already at full health');
+    }
+  }
+
+  // E on foot: step out of the car, open the shop, or climb into the
+  // nearest car — in that order.
+  _interact() {
+    const p = this.player;
+    if (p.inCar) p.exitCar();
+    else if (this.economy.nearShop(p) && !this._findCar(4.5)) {
+      this.shopOpen = true;
+      this.hud.setObjective(this.economy.shopText());
+    } else this._takeCar(false);
+  }
+
+  _carjackKey() {
+    if (!this.player.inCar) this._takeCar(true);
+  }
+
+  // Hints near points of interest.
+  _poiHint() {
+    const p = this.player;
+    if (!p.inCar && this.economy.nearShop(p)) {
+      this.hud.setHint('Iron & Oak Guns — press E to shop', 0.5);
+    } else if (this.garage.nearGarage(p)) {
+      this.hud.setHint(p.inCar
+        ? 'Wrench Garage — press G to store this car'
+        : (this.garage.stored.length ? 'Wrench Garage — press G to take out a car' : 'Wrench Garage — bring a car worth keeping'), 0.5);
+    }
+  }
+
   // ---------- verbs ----------
-  _nearestCar(maxDist) {
+  _findCar(maxDist) {
     let best = null;
     let bestD = maxDist;
     const all = [...this.traffic.all(), ...this.worldCars, ...this.police.allUnits()];
@@ -266,8 +434,8 @@ class Game {
     return best;
   }
 
-  _enterNearestCar(carjack) {
-    const car = this._nearestCar(4.5);
+  _takeCar(carjack) {
+    const car = this._findCar(4.5);
     if (!car) return false;
     const wasTraffic = this.traffic.all().includes(car);
     const wasPolice = this.police.allUnits().includes(car);
@@ -286,14 +454,14 @@ class Game {
   }
 
   // Aim from the camera through the centre of the screen.
-  _aimPoint() {
+  _aim() {
     const dir = new THREE.Vector3();
     this.camera.camera.getWorldDirection(dir);
     const origin = this.camera.camera.position.clone();
     return origin.addScaledVector(dir, 55);
   }
 
-  _shoot() {
+  _fire() {
     const p = this.player;
     // Dry fire: an empty gun clicks and says where the ammo is, instead
     // of silently doing nothing while the player wonders why.
@@ -305,13 +473,13 @@ class Game {
     if (p.weapon === 'fists') {
       // Fists hit through combat.playerShoot alone: the old code also
       // ran a second melee loop here, so every punch landed twice.
-      const kills = this.combat.playerShoot(p, this._aimPoint(), 0.016);
+      const kills = this.combat.playerShoot(p, this._aim(), 0.016);
       this.stats.kills += kills;
       this.pedestrians.scareAt(p.pos, 20);
       return kills;
     }
     const before = this.combat.aliveCount();
-    this.combat.playerShoot(p, this._aimPoint(), 0.016);
+    this.combat.playerShoot(p, this._aim(), 0.016);
     const kills = before - this.combat.aliveCount();
     this.stats.kills += kills;
     if (this.police.stars === 0 && kills === 0) this.police.addStars(1, 'shots fired');
@@ -320,7 +488,7 @@ class Game {
     return kills;
   }
 
-  _handleDeath(kind) {
+  _kill(kind) {
     const p = this.player;
     if (kind === 'busted') {
       this.stats.busted++;
@@ -334,10 +502,10 @@ class Game {
     if (this.missions.active) this.missions.fail(kind === 'busted' ? 'Busted by the CLPD.' : 'Luz was wasted.');
     this.police.setStars(0);
     this.police.clearAll();
-    this.deadTimer = DEATH_PAUSE;
+    this.deadTimer = DEATH_CARD_SEC;
   }
 
-  _respawn() {
+  _revive() {
     const p = this.player;
     this.hud.hideBusted();
     if (p.inCar) {
@@ -365,14 +533,13 @@ class Game {
     this.fps = this.fps * 0.95 + (1 / dt) * 0.05;
     this.time += dt;
 
-    if (this.screen === 'title' || this.screen === 'menu') this._frameTitle(dt);
-    else if (this.screen === 'pause') this._framePause();
-    else this._framePlay(dt);
+    const run = this._screens[this.screen] || this._screens.play;
+    run(dt);
   }
 
   // Title screen: the city idles behind the menu — a slow vista orbit,
   // weather and water moving, traffic cruising the empty grid.
-  _frameTitle(dt) {
+  _titleFrame(dt) {
     this.camera.vista(this.time, { x: 0, z: 0 });
     this.weather.update(dt, null);
     this.city.update(dt, this.time);
@@ -382,16 +549,16 @@ class Game {
   }
 
   // Paused: frozen world, Escape resumes.
-  _framePause() {
+  _pauseFrame() {
     this.renderer.render(this.scene, this.camera.camera);
     if (this.input.pressed('Escape')) this.resume();
     this.input.endFrame();
   }
 
-  // One play frame: timers, keys, movement, systems, death, camera.
-  _framePlay(dt) {
-    this._tickTimers(dt);
-    if (this._deadTick(dt)) {
+  // One play frame: clocks, death card, keys, movement, world, death.
+  _playFrame(dt) {
+    this._clocks(dt);
+    if (this._deathCard(dt)) {
       this.renderer.render(this.scene, this.camera.camera);
       this.input.endFrame();
       return;
@@ -403,8 +570,8 @@ class Game {
       input.endFrame();
       return;
     }
-    this._movePlayer(dt);
-    const combatResult = this._updateSystems(dt);
+    this._steerPlayer(dt);
+    const combatResult = this._tickWorld(dt);
     this._refreshObjective();
     this._checkDeath(combatResult);
     this.camera.update(dt, this.player.pos, this.player.heading, this.player.speedKmh, this.player.inCar);
@@ -414,7 +581,7 @@ class Game {
   }
 
   // Lifetime stats and the ticking clocks: autosave, hit cooldowns.
-  _tickTimers(dt) {
+  _clocks(dt) {
     const p = this.player;
     this.stats.playSeconds += dt;
     // Lifetime stats: cash earned counts every dollar that arrives,
@@ -423,7 +590,7 @@ class Game {
     this._lastCash = p.cash;
     if (p.inCar) this.stats.distanceKm += (Math.abs(p.car.speed) * dt) / 1000;
     this.saveTimer += dt;
-    if (this.saveTimer > AUTOSAVE_EVERY) {
+    if (this.saveTimer > AUTOSAVE_SEC) {
       this.saveTimer = 0;
       this.saveGame();
     }
@@ -433,145 +600,30 @@ class Game {
 
   // The BUSTED / WASTED card: counts down, respawns, and holds the
   // frame until it does. Returns true while the card is up.
-  _deadTick(dt) {
+  _deathCard(dt) {
     if (this.deadTimer <= 0) return false;
     this.deadTimer -= dt;
-    if (this.deadTimer <= 0) this._respawn();
+    if (this.deadTimer <= 0) this._revive();
     return true;
   }
 
-  // Keys, in three groups: global (always live), the shop's, and the
-  // play verbs. Returns true when the frame should end here (Escape).
-  _handleKeys() {
-    const input = this.input;
-    const p = this.player;
-    if (input.pressed('Escape')) {
-      this.pause();
-      return true;
-    }
-    if (input.pressed('KeyM')) {
-      const muted = this.audio.toggleMute();
-      this.hud.setHint(muted ? 'Sound muted' : 'Sound on');
-    }
-    if (input.pressed('KeyQ')) this.crew.useAbility();
-    if (input.pressed('KeyH') && p.inCar) {
-      this.audio.horn();
-      this.pedestrians.scareAt(p.pos, 15);
-    }
-    if (input.pressed('KeyC')) {
-      const view = this.camera.cycleView();
-      this.hud.setHint(`Camera: ${view}`);
-    }
-    if (input.pressed('KeyR')) this._restartOrRace();
-    if (input.pressed('KeyT')) this.sidejobs.startTaxi();
-    if (input.pressed('KeyP')) this.sidejobs.startPackage();
-    if (input.pressed('KeyG')) this._garageKey();
-    if (this.shopOpen) this._shopKeys();
-    else this._playKeys();
-    this._poiHint();
-    return false;
-  }
-
-  // R restarts the live mission, or starts the race whose first
-  // checkpoint Luz is standing near.
-  _restartOrRace() {
-    const p = this.player;
-    if (this.missions.active) {
-      this.missions.restart();
-      return;
-    }
-    const race = RACES.find((r) => Math.hypot(p.pos.x - r.checkpoints[0][0], p.pos.z - r.checkpoints[0][1]) < 20);
-    if (race) this.sidejobs.startRace(race.id);
-  }
-
-  // G at the garage: store the car Luz is driving, or take the last
-  // stored one back out.
-  _garageKey() {
-    const p = this.player;
-    if (!this.garage.nearGarage(p)) return;
-    if (p.inCar) this.garage.storeCurrentCar();
-    else if (this.garage.stored.length) this.garage.takeOut(this.garage.stored.length - 1);
-  }
-
-  // The shop's number keys: buy, or close with E.
-  _shopKeys() {
-    const input = this.input;
-    if (input.pressed('KeyE')) {
-      this.shopOpen = false;
-      this.hud.clearObjective();
-    }
-    if (input.pressed('Digit1')) this.economy.buy('pistol');
-    if (input.pressed('Digit2')) this.economy.buy('shotgun');
-    if (input.pressed('Digit3')) this.economy.buy('rifle');
-    if (input.pressed('Digit4')) this.economy.buy('armor');
-    if (input.pressed('Digit5')) this.economy.buy('medkit');
-    if (input.pressed('Digit6')) this.economy.buy('crate');
-    if (this.shopOpen) this.hud.setObjective(this.economy.shopText());
-  }
-
-  // The play verbs: weapons, medkit, enter/exit, carjack.
-  _playKeys() {
-    const input = this.input;
-    const p = this.player;
-    if (input.pressed('Digit1')) p.setWeapon('fists');
-    if (input.pressed('Digit2')) p.setWeapon('pistol');
-    if (input.pressed('Digit3')) p.setWeapon('shotgun');
-    if (input.pressed('Digit4')) p.setWeapon('rifle');
-    if (input.pressed('Digit5')) this._medkitKey();
-    if (input.pressed('KeyE')) {
-      if (p.inCar) p.exitCar();
-      else if (this.economy.nearShop(p) && !this._nearestCar(4.5)) {
-        this.shopOpen = true;
-        this.hud.setObjective(this.economy.shopText());
-      } else this._enterNearestCar(false);
-    }
-    if (input.pressed('KeyF') && !p.inCar) this._enterNearestCar(true);
-  }
-
-  // 5 spends a medkit from the pouch, with a word for each outcome.
-  _medkitKey() {
-    const p = this.player;
-    const used = p.useMedkit();
-    if (used === 'used') {
-      this.effects.heal(p.pos);
-      this.audio.pickup();
-      this.hud.say('Luz', 'Patched up. Back to it.');
-    } else if (used === 'empty') {
-      this.hud.setHint('No medkits — buy one at Iron & Oak');
-    } else {
-      this.hud.setHint('Already at full health');
-    }
-  }
-
-  // Hints near points of interest.
-  _poiHint() {
-    const p = this.player;
-    if (!p.inCar && this.economy.nearShop(p)) {
-      this.hud.setHint('Iron & Oak Guns — press E to shop', 0.5);
-    } else if (this.garage.nearGarage(p)) {
-      this.hud.setHint(p.inCar
-        ? 'Wrench Garage — press G to store this car'
-        : (this.garage.stored.length ? 'Wrench Garage — press G to take out a car' : 'Wrench Garage — bring a car worth keeping'), 0.5);
-    }
-  }
-
   // Move Luz: drive the car, or walk.
-  _movePlayer(dt) {
+  _steerPlayer(dt) {
     const input = this.input;
     const p = this.player;
     const axes = input.axes();
-    if (p.inCar) this._driveCar(dt, axes);
+    if (p.inCar) this._drive(dt, axes);
     else {
       p.moveOnFoot(dt, axes.x, axes.y, this.camera.yaw, input.sprint(), input.pressed('Space'), this.city);
       this.audio.setEngine(0, false);
-      if (input.consumeMouseClick()) this._shoot();
-      else if (input.mouseDown && p.weapon === 'rifle') this._shoot();
+      if (input.consumeMouseClick()) this._fire();
+      else if (input.mouseDown && p.weapon === 'rifle') this._fire();
     }
   }
 
   // Drive the player's car: throttle, steering, handbrake, and the
   // consequences of sharing the road.
-  _driveCar(dt, axes) {
+  _drive(dt, axes) {
     const input = this.input;
     const p = this.player;
     let throttle = axes.y;
@@ -585,14 +637,15 @@ class Game {
       this.audio.skid();
       this.effects.tireSmoke(p.car.pos);
     }
-    this._carContacts(dt);
+    this._bumps(dt);
+    this._pedStrike(dt);
     if (p.car.smoking && Math.random() < dt * 6) this.effects.smoke(p.car.pos);
-    if (p.car.health <= 0) this._wreckCar();
+    if (p.car.health <= 0) this._burnout();
     this.audio.setEngine(Math.abs(p.car ? p.car.speed : 0) / 55, true);
   }
 
-  // Car-vs-car bumps and pedestrians in the way.
-  _carContacts(dt) {
+  // Car-vs-car bumps: push apart, and damage both cars on a hard hit.
+  _bumps(dt) {
     const p = this.player;
     for (const other of [...this.traffic.all(), ...this.police.allUnits()]) {
       if (other === p.car) continue;
@@ -614,21 +667,24 @@ class Game {
         this.crashCooldown = 0.5;
       }
     }
-    // Hitting pedestrians brings heat.
-    if (Math.abs(p.car.speed) > 8 && this.pedHitCooldown <= 0) {
-      for (const ped of this.pedestrians.peds) {
-        if (Math.hypot(ped.pos.x - p.car.pos.x, ped.pos.z - p.car.pos.z) < 2.4) {
-          this.pedestrians.scareAt(p.car.pos, 30);
-          this.police.addStars(1, 'pedestrian down');
-          this.pedHitCooldown = 3;
-          break;
-        }
+  }
+
+  // Hitting pedestrians brings heat.
+  _pedStrike(dt) {
+    const p = this.player;
+    if (Math.abs(p.car.speed) <= 8 || this.pedHitCooldown > 0) return;
+    for (const ped of this.pedestrians.peds) {
+      if (Math.hypot(ped.pos.x - p.car.pos.x, ped.pos.z - p.car.pos.z) < 2.4) {
+        this.pedestrians.scareAt(p.car.pos, 30);
+        this.police.addStars(1, 'pedestrian down');
+        this.pedHitCooldown = 3;
+        break;
       }
     }
   }
 
   // A wrecked car explodes and Luz is left standing in the street.
-  _wreckCar() {
+  _burnout() {
     const p = this.player;
     const wreck = p.car;
     this.effects.explosion(wreck.pos);
@@ -640,7 +696,7 @@ class Game {
   }
 
   // Tick every system. Returns combat's verdict on the player.
-  _updateSystems(dt) {
+  _tickWorld(dt) {
     const p = this.player;
     this.traffic.ensureCount(16, p.pos);
     this.traffic.update(dt, p.pos, this.city);
@@ -675,8 +731,8 @@ class Game {
   // Busted / wasted.
   _checkDeath(combatResult) {
     const p = this.player;
-    if (this.police.busted) this._handleDeath('busted');
-    else if (p.health <= 0 || combatResult === 'player-dead') this._handleDeath('wasted');
+    if (this.police.busted) this._kill('busted');
+    else if (p.health <= 0 || combatResult === 'player-dead') this._kill('wasted');
   }
 }
 

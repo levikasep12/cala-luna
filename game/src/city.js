@@ -1,39 +1,27 @@
-// CALA LUNA — city: the whole procedural island, built from one seed.
+// CALA LUNA — city: the whole procedural island, grown from one seed.
 // A street grid over five districts, beach and harbor to the south,
 // buildings with lit windows, palms, streetlights, landmarks, stunt
 // ramps and the bay. The city also answers the two questions the rest
 // of the game keeps asking: which district is this, and is anything in
-// the way. The build order is fixed: the seeded random stream is
-// consumed in the same sequence every run, so a seed always grows the
-// same city.
+// the way. The build runs as a fixed stage list: the seeded random
+// stream is consumed in the same sequence every run, so a seed always
+// grows the same city.
 
 import * as THREE from 'three';
 import { WORLD, DISTRICTS, SHOPS, STUNTS } from './config.js';
 import { makeRng, pick, pickN, range, rangeInt, chance, gaussRange } from './random.js';
 
-const FACADE_COLORS = [0xd8c49a, 0xc9a06c, 0xb08a5e, 0x9db3c8, 0xc98d7a, 0xa8b89a, 0xd9c9a3, 0x8fa3b8];
+// Facade base colours, in the order their window textures are drawn.
+const FACADE_PALETTE = [0xd8c49a, 0xc9a06c, 0xb08a5e, 0x9db3c8, 0xc98d7a, 0xa8b89a, 0xd9c9a3, 0x8fa3b8];
 
-// A flat plane lying on the ground (rotation.x = -PI/2).
-function groundPlane(parent, w, d, mat, x, y, z, shadow = false) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(x, y, z);
-  if (shadow) m.receiveShadow = true;
-  parent.add(m);
-  return m;
-}
-
-// A box mesh: geometry, material, position, parent, optional shadows.
-function boxAt(parent, w, h, d, mat, x, y, z, shadow = false) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  if (shadow) {
-    m.castShadow = true;
-    m.receiveShadow = true;
-  }
-  parent.add(m);
-  return m;
-}
+// Landmarks: id, position, colour, sign text.
+const LANDMARKS = [
+  ['bank', 90, -150, 0x8a7a5a, 'MERIDIAN BANK'],
+  ['vault', 270, 60, 0x6a7a8a, 'HARBOR VAULT'],
+  ['safehouse', -30, 150, 0xa8c69a, 'SAFEHOUSE'],
+  ['gunshop', -150, -30, 0x9a8a6a, 'IRON & OAK'],
+  ['garage', 90, 210, 0x7a9ab0, 'WRENCH GARAGE'],
+];
 
 export class City {
   constructor(scene, seed) {
@@ -50,10 +38,7 @@ export class City {
   }
 
   districtAt(x, z) {
-    for (const d of DISTRICTS) {
-      if (x >= d.x0 && x < d.x1 && z >= d.z0 && z < d.z1) return d;
-    }
-    return DISTRICTS[0];
+    return DISTRICTS.find((d) => x >= d.x0 && x < d.x1 && z >= d.z0 && z < d.z1) || DISTRICTS[0];
   }
 
   // Push a circle (x,z,r) out of every building footprint it overlaps.
@@ -63,7 +48,7 @@ export class City {
   resolveCollision(pos, radius) {
     let hit = false;
     for (const b of this.colliders) {
-      if (this._pushOutOf(pos, radius, b)) hit = true;
+      if (this._eject(pos, radius, b)) hit = true;
     }
     // World bounds
     const m = WORLD.halfSize;
@@ -73,7 +58,7 @@ export class City {
   }
 
   // Push the circle out of one footprint. Returns true on overlap.
-  _pushOutOf(pos, radius, b) {
+  _eject(pos, radius, b) {
     const cx = Math.max(b.x0, Math.min(pos.x, b.x1));
     const cz = Math.max(b.z0, Math.min(pos.z, b.z1));
     const dx = pos.x - cx;
@@ -103,19 +88,38 @@ export class City {
 
   // Snap a point to the nearest street centreline (used by traffic).
   nearestStreet(x, z) {
-    let bx = this.streetXs[0];
-    let bz = this.streetZs[0];
-    for (const s of this.streetXs) {
-      if (Math.abs(s - x) < Math.abs(bx - x)) bx = s;
+    return { x: this._closest(this.streetXs, x), z: this._closest(this.streetZs, z) };
+  }
+
+  _closest(list, value) {
+    return list.reduce((best, s) => (Math.abs(s - value) < Math.abs(best - value) ? s : best), list[0]);
+  }
+
+  // A flat plane lying on the ground (rotation.x = -PI/2).
+  _flat(w, d, mat, x, y, z, shadow = false) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, y, z);
+    if (shadow) m.receiveShadow = true;
+    this.group.add(m);
+    return m;
+  }
+
+  // A box mesh: geometry, material, position, optional shadows.
+  // `parent` defaults to the city group; towers pass their own group.
+  _cube(w, h, d, mat, x, y, z, shadow = false, parent = this.group) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    if (shadow) {
+      m.castShadow = true;
+      m.receiveShadow = true;
     }
-    for (const s of this.streetZs) {
-      if (Math.abs(s - z) < Math.abs(bz - z)) bz = s;
-    }
-    return { x: bx, z: bz };
+    parent.add(m);
+    return m;
   }
 
   // A building facade: base colour with a grid of windows, some lit.
-  _windowTexture(base, litRatio) {
+  _windowCanvas(base, litRatio) {
     const c = document.createElement('canvas');
     c.width = 64;
     c.height = 128;
@@ -135,7 +139,7 @@ export class City {
   }
 
   // Asphalt with a dashed centre line, tiled along each road.
-  _roadTexture() {
+  _asphalt() {
     const c = document.createElement('canvas');
     c.width = 64;
     c.height = 64;
@@ -156,32 +160,27 @@ export class City {
     return tex;
   }
 
-  // Build order is load-bearing for the seeded layout: each section
-  // consumes the random stream in turn, so the sections run in a fixed
+  // Build order is load-bearing for the seeded layout: each stage
+  // consumes the random stream in turn, so the stages run in a fixed
   // sequence and stay in it.
   _build() {
-    this._groundAndWater();
-    this._roadGrid();
-    this._intersections();
-    this._blocks();
-    this._palms();
-    this._streetlights();
-    this._landmarks();
-    this._ramps();
-    this._beachfront();
-    this._harbor();
-    this._hills();
+    const stages = [
+      this._terrain, this._streets, this._crossings, this._lots,
+      this._palms, this._lamps, this._sites, this._jumps,
+      this._shore, this._docks, this._ridges,
+    ];
+    for (const stage of stages) stage.call(this);
   }
 
   // Grass base, beach sand and the bay to the south.
-  _groundAndWater() {
+  _terrain() {
     const half = WORLD.halfSize;
-    groundPlane(
-      this.group, half * 2 + 200, half * 2 + 260,
+    this._flat(
+      half * 2 + 200, half * 2 + 260,
       new THREE.MeshLambertMaterial({ color: 0x8a9a6a }), 0, -0.05, 40, true,
     );
-    groundPlane(
-      this.group, half * 2 + 200, 60,
+    this._flat(
+      half * 2 + 200, 60,
       new THREE.MeshLambertMaterial({ color: 0xe6d3a3 }), 0, 0.0, WORLD.beachZ + 20, true,
     );
     this.water = new THREE.Mesh(
@@ -194,10 +193,10 @@ export class City {
   }
 
   // Streets: every block step, both directions.
-  _roadGrid() {
+  _streets() {
     const half = WORLD.halfSize;
     const block = WORLD.block;
-    const roadTex = this._roadTexture();
+    const roadTex = this._asphalt();
     const roadMat = new THREE.MeshLambertMaterial({ map: roadTex });
     for (let s = -half; s <= half; s += block) {
       this.streetXs.push(s);
@@ -226,16 +225,16 @@ export class City {
   }
 
   // Sidewalks and crosswalks at every intersection.
-  _intersections() {
+  _crossings() {
     const walkMat = new THREE.MeshLambertMaterial({ color: 0xb8b0a0 });
     const crossMat = new THREE.MeshBasicMaterial({ color: 0xe8e4d8 });
     for (const sx of this.streetXs) {
       for (const sz of this.streetZs) {
         if (sz > WORLD.beachZ) continue;
         for (let i = -2; i <= 2; i++) {
-          groundPlane(this.group, 2.2, 9, crossMat, sx + i * 2.8, 0.04, sz - WORLD.roadWidth / 2 - 2);
+          this._flat(2.2, 9, crossMat, sx + i * 2.8, 0.04, sz - WORLD.roadWidth / 2 - 2);
         }
-        groundPlane(this.group, 20, 20, walkMat, sx + 14, 0.01, sz + 14, true);
+        this._flat(20, 20, walkMat, sx + 14, 0.01, sz + 14, true);
       }
     }
   }
@@ -243,12 +242,12 @@ export class City {
   // Buildings: one per block, taller downtown. Heights use a bell
   // curve, not a flat spread, so most blocks read mid-rise and only a
   // few towers break the skyline. Some lots become pocket parks.
-  _blocks() {
+  _lots() {
     const rng = this.rng;
     const half = WORLD.halfSize;
     const block = WORLD.block;
-    const facades = FACADE_COLORS.map((c) => new THREE.MeshLambertMaterial({
-      map: this._windowTexture('#' + c.toString(16).padStart(6, '0'), 0.25),
+    const facades = FACADE_PALETTE.map((c) => new THREE.MeshLambertMaterial({
+      map: this._windowCanvas('#' + c.toString(16).padStart(6, '0'), 0.25),
     }));
     const roofMat = new THREE.MeshLambertMaterial({ color: 0x4a4238 });
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6a4a2a });
@@ -256,17 +255,17 @@ export class City {
     for (let bx = -half + block / 2; bx < half; bx += block) {
       for (let bz = -half + block / 2; bz < WORLD.beachZ - 10; bz += block) {
         if (chance(rng, 0.12)) {
-          this._pocketPark(bx, bz, trunkMat, crownMat);
+          this._park(bx, bz, trunkMat, crownMat);
           continue;
         }
-        this._blockTower(bx, bz, facades, roofMat);
+        this._tower(bx, bz, facades, roofMat);
       }
     }
   }
 
   // An empty lot becomes a pocket park: a few trees, no collider, so
   // the block stays walkable.
-  _pocketPark(bx, bz, trunkMat, crownMat) {
+  _park(bx, bz, trunkMat, crownMat) {
     const rng = this.rng;
     const trees = rangeInt(rng, 2, 4);
     for (let t = 0; t < trees; t++) {
@@ -285,7 +284,7 @@ export class City {
 
   // One building: a lit-window slab, a roof cap, an optional rooftop
   // box for silhouette variety, and its collision footprint.
-  _blockTower(bx, bz, facades, roofMat) {
+  _tower(bx, bz, facades, roofMat) {
     const rng = this.rng;
     const d = this.districtAt(bx, bz);
     const downtown = d.id === 'downtown';
@@ -293,11 +292,11 @@ export class City {
     const w = range(rng, 22, 40);
     const dep = range(rng, 22, 40);
     const mat = pick(rng, facades);
-    boxAt(this.group, w, h, dep, mat, bx, h / 2, bz, true);
-    boxAt(this.group, w + 1, 1.2, dep + 1, roofMat, bx, h + 0.6, bz);
+    this._cube(w, h, dep, mat, bx, h / 2, bz, true);
+    this._cube(w + 1, 1.2, dep + 1, roofMat, bx, h + 0.6, bz);
     this.colliders.push({ x0: bx - w / 2, z0: bz - dep / 2, x1: bx + w / 2, z1: bz + dep / 2 });
     if (chance(rng, 0.3)) {
-      boxAt(this.group, 4, 4, 4, roofMat, bx + range(rng, -8, 8), h + 3, bz + range(rng, -8, 8));
+      this._cube(4, 4, 4, roofMat, bx + range(rng, -8, 8), h + 3, bz + range(rng, -8, 8));
     }
   }
 
@@ -313,10 +312,10 @@ export class City {
     for (let i = 0; i < 40; i++) {
       spots.push([range(rng, -320, 320), range(rng, -320, 280)]);
     }
-    for (const [x, z] of spots) this._palm(x, z, trunkMat, leafMat);
+    for (const [x, z] of spots) this._palmTree(x, z, trunkMat, leafMat);
   }
 
-  _palm(x, z, trunkMat, leafMat) {
+  _palmTree(x, z, trunkMat, leafMat) {
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.8, 9, 5), trunkMat);
     trunk.position.set(x, 4.5, z);
     trunk.castShadow = true;
@@ -333,7 +332,7 @@ export class City {
   }
 
   // Streetlights along every other street.
-  _streetlights() {
+  _lamps() {
     const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
     for (const sx of this.streetXs) {
@@ -349,26 +348,24 @@ export class City {
   }
 
   // Landmarks: bank (Downtown), vault (Harbor), safehouse, gun shop, garage.
-  _landmarks() {
-    this._landmark('bank', 90, -150, 0x8a7a5a, 'MERIDIAN BANK');
-    this._landmark('vault', 270, 60, 0x6a7a8a, 'HARBOR VAULT');
-    this._landmark('safehouse', -30, 150, 0xa8c69a, 'SAFEHOUSE');
-    this._landmark('gunshop', -150, -30, 0x9a8a6a, 'IRON & OAK');
-    this._landmark('garage', 90, 210, 0x7a9ab0, 'WRENCH GARAGE');
+  _sites() {
+    for (const [id, x, z, color, label] of LANDMARKS) {
+      this._site(id, x, z, color, label);
+    }
   }
 
-  _landmark(id, x, z, color, label) {
-    boxAt(this.group, 26, 14, 20, new THREE.MeshLambertMaterial({ color }), x, 7, z, true);
-    boxAt(this.group, 22, 3, 1, new THREE.MeshBasicMaterial({ color: 0xffe9a8 }), x, 15.5, z - 10.5);
+  _site(id, x, z, color, label) {
+    this._cube(26, 14, 20, new THREE.MeshLambertMaterial({ color }), x, 7, z, true);
+    this._cube(22, 3, 1, new THREE.MeshBasicMaterial({ color: 0xffe9a8 }), x, 15.5, z - 10.5);
     this.colliders.push({ x0: x - 13, z0: z - 10, x1: x + 13, z1: z + 10 });
     this.landmarks[id] = { x, z, label };
   }
 
   // Stunt ramps, tilted toward the jump.
-  _ramps() {
+  _jumps() {
     const rampMat = new THREE.MeshLambertMaterial({ color: 0xd8b13a });
     for (const s of STUNTS) {
-      const ramp = boxAt(this.group, 8, 1, 12, rampMat, s.ramp[0], 1.5, s.ramp[1]);
+      const ramp = this._cube(8, 1, 12, rampMat, s.ramp[0], 1.5, s.ramp[1]);
       ramp.rotation.x = -0.45;
       ramp.castShadow = true;
     }
@@ -376,15 +373,15 @@ export class City {
 
   // Beach boardwalk: planks along the sand, three lifeguard towers at
   // distinct spots, and umbrellas for the bathers who never come.
-  _beachfront() {
+  _shore() {
     const rng = this.rng;
     const half = WORLD.halfSize;
     const plankMat = new THREE.MeshLambertMaterial({ color: 0x9a7a4a });
-    groundPlane(this.group, half * 2 + 200, 8, plankMat, 0, 0.03, WORLD.beachZ - 6, true);
+    this._flat(half * 2 + 200, 8, plankMat, 0, 0.03, WORLD.beachZ - 6, true);
     const towerMat = new THREE.MeshLambertMaterial({ color: 0xe8e4d8 });
     const towerRoofMat = new THREE.MeshLambertMaterial({ color: 0xd43a2f });
     for (const tx of pickN(rng, [-240, -160, -80, 0, 80, 160, 240], 3)) {
-      this._lifeguardTower(tx, plankMat, towerMat, towerRoofMat);
+      this._watchtower(tx, plankMat, towerMat, towerRoofMat);
     }
     const umbrellaCols = [0xd43a2f, 0x2f6fd0, 0xf2c230, 0x4a8f3f, 0x7a2fd0];
     for (let i = 0; i < 10; i++) {
@@ -403,14 +400,14 @@ export class City {
     }
   }
 
-  _lifeguardTower(tx, plankMat, towerMat, towerRoofMat) {
+  _watchtower(tx, plankMat, towerMat, towerRoofMat) {
     const tower = new THREE.Group();
     for (const [lx, lz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 4, 0.35), plankMat);
       leg.position.set(lx, 2, lz);
       tower.add(leg);
     }
-    const cabin = boxAt(tower, 4, 2.6, 3.6, towerMat, 0, 5.3, 0);
+    const cabin = this._cube(4, 2.6, 3.6, towerMat, 0, 5.3, 0, false, tower);
     cabin.castShadow = true;
     const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 1.6, 4), towerRoofMat);
     roof.position.y = 7.4;
@@ -421,32 +418,32 @@ export class City {
   }
 
   // Harbor: piers, crates, boats.
-  _harbor() {
+  _docks() {
     const rng = this.rng;
     const pierMat = new THREE.MeshLambertMaterial({ color: 0x6a5a48 });
     for (let i = 0; i < 3; i++) {
-      boxAt(this.group, 6, 1.5, 60, pierMat, 180 + i * 60, 0.6, WORLD.beachZ + 35);
+      this._cube(6, 1.5, 60, pierMat, 180 + i * 60, 0.6, WORLD.beachZ + 35);
     }
     const crateMat = new THREE.MeshLambertMaterial({ color: 0xb06a3a });
     for (let i = 0; i < 26; i++) {
-      const c = boxAt(
-        this.group, 4, 4, 4, crateMat,
+      const c = this._cube(
+        4, 4, 4, crateMat,
         range(rng, 170, 310), 2, range(rng, 240, 300),
       );
       c.rotation.y = rng() * Math.PI;
       c.castShadow = true;
     }
-    this._boat(210, WORLD.beachZ + 70, 0xd8d8d8);
-    this._boat(300, WORLD.beachZ + 80, 0x3a6ad8);
+    this._yacht(210, WORLD.beachZ + 70, 0xd8d8d8);
+    this._yacht(300, WORLD.beachZ + 80, 0x3a6ad8);
   }
 
-  _boat(x, z, color) {
-    boxAt(this.group, 6, 2.5, 16, new THREE.MeshLambertMaterial({ color }), x, 0.8, z);
-    boxAt(this.group, 4, 2.5, 6, new THREE.MeshLambertMaterial({ color: 0xf0ead8 }), x, 3, z - 1);
+  _yacht(x, z, color) {
+    this._cube(6, 2.5, 16, new THREE.MeshLambertMaterial({ color }), x, 0.8, z);
+    this._cube(4, 2.5, 6, new THREE.MeshLambertMaterial({ color: 0xf0ead8 }), x, 3, z - 1);
   }
 
   // Distant hills to the north for skyline depth.
-  _hills() {
+  _ridges() {
     const rng = this.rng;
     const hillMat = new THREE.MeshLambertMaterial({ color: 0x6a7a5a });
     for (let i = 0; i < 7; i++) {

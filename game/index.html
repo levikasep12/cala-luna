@@ -1,117 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="CALA LUNA — a sun-soaked open-world crime game. Luz Vega drives for hire across five districts: story jobs, a crew, territory, and five stars of heat.">
-<meta name="theme-color" content="#0b0e14">
-<meta name="color-scheme" content="dark">
-<link rel="icon" href="data:,">
-<title>CALA LUNA — a sun-soaked open-world crime game</title>
-<link rel="stylesheet" href="./style.css">
-<script type="importmap">
-{ "imports": { "three": "./vendor/three/three.module.min.js" } }
-</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CALA LUNA — a sun-soaked open-world crime game. Luz Vega drives for hire across five districts: story jobs, a crew, territory, and five stars of heat.">
+  <meta name="theme-color" content="#0b0e14">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>CALA LUNA — a sun-soaked open-world crime game</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js" } }
+  </script>
 </head>
 <body>
-<div id="game-root"></div>
-<noscript><div id="noscript">CALA LUNA needs JavaScript to run — it is a 3D game, not a page.</div></noscript>
+  <!-- The 3D canvas mounts here; every overlay below sits on top of it. -->
+  <div id="game-root"></div>
+  <noscript>
+    <div id="noscript">CALA LUNA needs JavaScript to run — it is a 3D game, not a page.</div>
+  </noscript>
 
-<!-- HUD -->
-<div id="hud" class="hidden">
-  <div id="damage-vignette"></div>
-  <div id="hud-cash">
-    <div id="cash-value">$0</div>
-    <div id="clock-district">18:00 · OLD TOWN</div>
-    <div id="medkit-count"></div>
+  <!-- In-game HUD: cash, wanted level, vitals, objective, minimap, speed. -->
+  <div id="hud" class="hidden">
+    <div id="damage-vignette"></div>
+
+    <div id="hud-cash">
+      <div id="cash-value">$0</div>
+      <div id="clock-district">18:00 · OLD TOWN</div>
+      <div id="medkit-count"></div>
+    </div>
+
+    <div id="hud-wanted">
+      <div id="wanted-stars">☆☆☆☆☆</div>
+      <div id="health-bar">
+        <div id="health-fill"></div><span>HEALTH</span>
+      </div>
+      <div id="armor-bar">
+        <div id="armor-fill"></div><span>ARMOR</span>
+      </div>
+      <div id="stamina-bar">
+        <div id="stamina-fill"></div><span>STAMINA</span>
+      </div>
+      <div id="heat-bar">
+        <div id="heat-fill"></div><span>COOLING</span>
+      </div>
+    </div>
+
+    <div id="hud-objective">
+      <div id="objective-label">OBJECTIVE</div>
+      <div id="objective-text"></div>
+    </div>
+
+    <div id="hud-minimap">
+      <canvas id="minimap" width="220" height="220"></canvas>
+    </div>
+
+    <div id="hud-drive">
+      <div id="speed-value">0</div>
+      <div id="speed-unit">KM/H</div>
+      <div id="vehicle-name"></div>
+    </div>
+
+    <div id="hud-weapon">
+      <span id="weapon-name">FISTS</span> · <span id="ammo-value">∞</span>
+    </div>
+    <div id="hud-crew"><span id="crew-status"></span></div>
+    <div id="dialogue-bar">
+      <span id="dialogue-speaker"></span><span id="dialogue-text"></span>
+    </div>
+    <div id="banner"></div>
+    <div id="hud-hint"></div>
   </div>
-  <div id="hud-wanted">
-    <div id="wanted-stars">☆☆☆☆☆</div>
-    <div id="health-bar"><div id="health-fill"></div><span>HEALTH</span></div>
-    <div id="armor-bar"><div id="armor-fill"></div><span>ARMOR</span></div>
-    <div id="stamina-bar"><div id="stamina-fill"></div><span>STAMINA</span></div>
-    <div id="heat-bar"><div id="heat-fill"></div><span>COOLING</span></div>
+
+  <!-- Mission complete / failed card. -->
+  <div id="mission-card" class="hidden">
+    <div id="mission-card-title">MISSION PASSED</div>
+    <div id="mission-card-name"></div>
+    <div id="mission-card-reward"></div>
+    <div id="mission-card-sub"></div>
   </div>
-  <div id="hud-objective">
-    <div id="objective-label">OBJECTIVE</div>
-    <div id="objective-text"></div>
+
+  <!-- Busted / wasted card. -->
+  <div id="busted-card" class="hidden">
+    <div id="busted-title">BUSTED</div>
+    <div id="busted-sub">The CLPD caught up with Luz. $500 bail paid.</div>
   </div>
-  <div id="hud-minimap"><canvas id="minimap" width="220" height="220"></canvas></div>
-  <div id="hud-drive">
-    <div id="speed-value">0</div><div id="speed-unit">KM/H</div>
-    <div id="vehicle-name"></div>
+
+  <!-- Title screen. -->
+  <div id="start-screen">
+    <div id="start-kicker">A SUN-SOAKED OPEN-WORLD CRIME GAME</div>
+    <h1 id="start-title">CALA<span>LUNA</span></h1>
+    <p id="start-tagline">Golden hour on the crescent bay. Luz Vega drives for hire — and the whole city is on the meter. Eight story jobs. A crew to build. Five stars of heat to outrun.</p>
+    <div id="start-menu">
+      <button id="btn-play" class="menu-btn primary">PLAY</button>
+      <button id="btn-continue" class="menu-btn">CONTINUE</button>
+      <button id="btn-howto" class="menu-btn">HOW TO PLAY</button>
+      <button id="btn-stats" class="menu-btn">STATS</button>
+    </div>
+    <div id="start-controls">
+      <div><b>WASD</b> walk / drive</div>
+      <div><b>Shift</b> sprint</div>
+      <div><b>Space</b> jump / handbrake</div>
+      <div><b>E</b> enter / exit car</div>
+      <div><b>F</b> carjack</div>
+      <div><b>Mouse drag</b> orbit camera</div>
+      <div><b>Click</b> punch / shoot</div>
+      <div><b>1 / 2 / 3 / 4</b> fists / pistol / shotgun / rifle</div>
+      <div><b>Q</b> crew ability</div>
+      <div><b>Esc</b> pause</div>
+      <div><b>M</b> mute</div>
+      <div><b>R</b> restart mission</div>
+      <div><b>H</b> horn</div>
+      <div><b>C</b> camera view</div>
+      <div><b>T</b> taxi fare</div>
+      <div><b>P</b> package run</div>
+      <div><b>G</b> garage</div>
+      <div><b>5</b> use medkit</div>
+    </div>
+    <div id="start-foot">Seeded city: add ?seed=N to the address for a different Cala Luna.</div>
   </div>
-  <div id="hud-weapon"><span id="weapon-name">FISTS</span> · <span id="ammo-value">∞</span></div>
-  <div id="hud-crew"><span id="crew-status"></span></div>
-  <div id="dialogue-bar"><span id="dialogue-speaker"></span><span id="dialogue-text"></span></div>
-  <div id="banner"></div>
-  <div id="hud-hint"></div>
-</div>
 
-<!-- Mission complete / failed -->
-<div id="mission-card" class="hidden">
-  <div id="mission-card-title">MISSION PASSED</div>
-  <div id="mission-card-name"></div>
-  <div id="mission-card-reward"></div>
-  <div id="mission-card-sub"></div>
-</div>
-
-<!-- Busted / wasted -->
-<div id="busted-card" class="hidden">
-  <div id="busted-title">BUSTED</div>
-  <div id="busted-sub">The CLPD caught up with Luz. $500 bail paid.</div>
-</div>
-
-<!-- Start screen -->
-<div id="start-screen">
-  <div id="start-kicker">A SUN-SOAKED OPEN-WORLD CRIME GAME</div>
-  <h1 id="start-title">CALA<span>LUNA</span></h1>
-  <p id="start-tagline">Golden hour on the crescent bay. Luz Vega drives for hire — and the whole city is on the meter. Eight story jobs. A crew to build. Five stars of heat to outrun.</p>
-  <div id="start-menu">
-    <button id="btn-play" class="menu-btn primary">PLAY</button>
-    <button id="btn-continue" class="menu-btn">CONTINUE</button>
-    <button id="btn-howto" class="menu-btn">HOW TO PLAY</button>
-    <button id="btn-stats" class="menu-btn">STATS</button>
+  <!-- How to play. -->
+  <div id="howto-screen" class="hidden overlay">
+    <h2>HOW TO PLAY</h2>
+    <p>Follow the yellow waypoint. Finish story jobs to unlock the next one and earn cash. Spend cash at the gun shop (weapons, ammo, armor) and the garage (store the cars you steal). Side work pays too: taxi fares, package runs, street races and stunt jumps.</p>
+    <p>Heat brings the CLPD: 1 star patrols, 2 stars chases, 3 stars roadblocks, 4 stars the police helicopter, 5 stars SWAT. Break line of sight to cool down. Your crew helps: Marco repairs your ride, Ines wipes a star — press Q when their ability is ready.</p>
+    <p>Take over districts by clearing rival crews. Hold all five to unlock the finale payout. Progress saves automatically.</p>
+    <button id="btn-howto-back" class="menu-btn primary">BACK</button>
   </div>
-  <div id="start-controls">
-    <div><b>WASD</b> walk / drive</div><div><b>Shift</b> sprint</div>
-    <div><b>Space</b> jump / handbrake</div><div><b>E</b> enter / exit car</div>
-    <div><b>F</b> carjack</div><div><b>Mouse drag</b> orbit camera</div>
-    <div><b>Click</b> punch / shoot</div><div><b>1 / 2 / 3 / 4</b> fists / pistol / shotgun / rifle</div>
-    <div><b>Q</b> crew ability</div><div><b>Esc</b> pause</div>
-    <div><b>M</b> mute</div><div><b>R</b> restart mission</div>
-    <div><b>H</b> horn</div><div><b>C</b> camera view</div>
-    <div><b>T</b> taxi fare</div><div><b>P</b> package run</div>
-    <div><b>G</b> garage</div><div><b>5</b> use medkit</div>
+
+  <!-- Lifetime stats. -->
+  <div id="stats-screen" class="hidden overlay">
+    <h2>LUZ VEGA — STATS</h2>
+    <div id="stats-body"></div>
+    <button id="btn-stats-back" class="menu-btn primary">BACK</button>
   </div>
-  <div id="start-foot">Seeded city: add ?seed=N to the address for a different Cala Luna.</div>
-</div>
 
-<!-- How to play -->
-<div id="howto-screen" class="hidden overlay">
-  <h2>HOW TO PLAY</h2>
-  <p>Follow the yellow waypoint. Finish story jobs to unlock the next one and earn cash. Spend cash at the gun shop (weapons, ammo, armor) and the garage (store the cars you steal). Side work pays too: taxi fares, package runs, street races and stunt jumps.</p>
-  <p>Heat brings the CLPD: 1 star patrols, 2 stars chases, 3 stars roadblocks, 4 stars the police helicopter, 5 stars SWAT. Break line of sight to cool down. Your crew helps: Marco repairs your ride, Ines wipes a star — press Q when their ability is ready.</p>
-  <p>Take over districts by clearing rival crews. Hold all five to unlock the finale payout. Progress saves automatically.</p>
-  <button id="btn-howto-back" class="menu-btn primary">BACK</button>
-</div>
+  <!-- Pause menu. -->
+  <div id="pause-screen" class="hidden overlay">
+    <h2>PAUSED</h2>
+    <div id="pause-stats"></div>
+    <button id="btn-resume" class="menu-btn primary">RESUME</button>
+    <button id="btn-restart-mission" class="menu-btn">RESTART MISSION</button>
+    <button id="btn-quit-title" class="menu-btn">QUIT TO TITLE</button>
+  </div>
 
-<!-- Stats -->
-<div id="stats-screen" class="hidden overlay">
-  <h2>LUZ VEGA — STATS</h2>
-  <div id="stats-body"></div>
-  <button id="btn-stats-back" class="menu-btn primary">BACK</button>
-</div>
-
-<!-- Pause -->
-<div id="pause-screen" class="hidden overlay">
-  <h2>PAUSED</h2>
-  <div id="pause-stats"></div>
-  <button id="btn-resume" class="menu-btn primary">RESUME</button>
-  <button id="btn-restart-mission" class="menu-btn">RESTART MISSION</button>
-  <button id="btn-quit-title" class="menu-btn">QUIT TO TITLE</button>
-</div>
-
-<script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

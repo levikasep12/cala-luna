@@ -11,13 +11,23 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
-const args = process.argv.slice(2);
-const portIndex = args.indexOf('--port');
-const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
-// 0 is valid: the OS picks a free port, and the listen callback prints it.
-const port = Number.isInteger(requested) && requested >= 0 && requested < 65536 ? requested : 8080;
-const hostIndex = args.indexOf('--host');
-const host = hostIndex === -1 ? undefined : (args[hostIndex + 1] || undefined);
+
+// --port and --host come from the command line; anything out of range
+// falls back to the defaults. 0 is a valid port: the OS picks a free
+// one, and the listen callback prints it.
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const flag = (name: string) => {
+    const at = args.indexOf(name);
+    return at === -1 ? undefined : args[at + 1];
+  };
+  const wanted = Number(flag('--port') ?? 8080);
+  const port = Number.isInteger(wanted) && wanted >= 0 && wanted < 65536 ? wanted : 8080;
+  const host = flag('--host') || undefined;
+  return { port, host };
+}
+
+const { port, host } = parseArgs();
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -35,47 +45,68 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+function mimeFor(file: string): string {
+  return MIME[extname(file)] ?? 'application/octet-stream';
+}
+
+// The requested path, decoded — or null when the URL is malformed.
+function requestedPath(rawUrl: string | undefined): string | null {
+  try {
+    const url = new URL(rawUrl ?? '/', 'http://localhost');
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+}
+
+// Map a URL path onto a file under game/: the file and its size, or
+// 'forbidden' when the path escapes the root (a traversal attempt),
+// or 'missing' when it is not a file at all.
+function resolveFile(pathname: string): { file: string; size: number } | 'forbidden' | 'missing' {
+  const withIndex = pathname.endsWith('/') ? pathname + 'index.html' : pathname;
+  const file = resolve(join(root, normalize(withIndex)));
+  if (file !== root && !file.startsWith(root + sep)) return 'forbidden';
+  try {
+    const stats = statSync(file);
+    if (!stats.isFile()) return 'missing';
+    return { file, size: stats.size };
+  } catch {
+    return 'missing';
+  }
+}
+
 const server = createServer((request, response) => {
   const log = (status: number, path: string) => console.log(`${request.method} ${path} -> ${status}`);
-  let pathname: string;
-  try {
-    const url = new URL(request.url ?? '/', 'http://localhost');
-    pathname = decodeURIComponent(url.pathname);
-  } catch {
+  const pathname = requestedPath(request.url);
+  if (pathname === null) {
     // A malformed % sequence used to throw out of the handler and kill
     // the whole server; now it is just a 400.
     log(400, request.url ?? '/');
     response.writeHead(400).end('bad request');
     return;
   }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const file = resolve(join(root, normalize(pathname)));
-  if (file !== root && !file.startsWith(root + sep)) {
+  const resolved = resolveFile(pathname);
+  if (resolved === 'forbidden') {
     log(403, pathname);
     response.writeHead(403).end('forbidden');
     return;
   }
-  let size: number;
-  try {
-    const stats = statSync(file);
-    if (!stats.isFile()) throw new Error('not a file');
-    size = stats.size;
-  } catch {
+  if (resolved === 'missing') {
     log(404, pathname);
     response.writeHead(404).end('not found');
     return;
   }
   log(200, pathname);
   response.writeHead(200, {
-    'content-type': MIME[extname(file)] ?? 'application/octet-stream',
-    'content-length': size,
+    'content-type': mimeFor(resolved.file),
+    'content-length': resolved.size,
     // Development server: never let the browser cache a stale build.
     'cache-control': 'no-cache',
   });
   // HEAD asks for headers only: no body, or the client hangs waiting
   // for bytes it never asked for.
   if (request.method === 'HEAD') { response.end(); return; }
-  createReadStream(file).pipe(response);
+  createReadStream(resolved.file).pipe(response);
 });
 
 server.on('error', (err) => {

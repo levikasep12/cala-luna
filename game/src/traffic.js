@@ -1,20 +1,21 @@
-// CALA LUNA — traffic: ambient cars that drive the street grid.
-// Each car holds a lane, turns at random intersections, brakes for Luz
-// when she is right ahead of it, and is recycled far from the player so
-// the streets near her always feel alive.
+// CALA LUNA — traffic: the city's background drivers. Cars hold a
+// lane along the street grid, turn at random intersections, and brake
+// when Luz is right in front of them instead of rear-ending her. Cars
+// that drift far away are culled so the spawn budget always refills
+// the streets around the player.
 
 import { Vehicle } from './vehicles.js';
 import { WORLD } from './config.js';
 import { makeRng, pick, weighted } from './random.js';
 
-// [type, weight]: sedans dominate the roads; the muscle car and the
+// [type, weight]: sedans own the roads; the muscle car and the
 // convertible are rare — spotting one is half the reason to steal it.
-const TRAFFIC_TYPES = [['sedan', 5], ['coupe', 2], ['taxi', 2], ['truck', 1], ['muscle', 1], ['convertible', 1]];
+const TRAFFIC_MIX = [['sedan', 5], ['coupe', 2], ['taxi', 2], ['truck', 1], ['muscle', 1], ['convertible', 1]];
 
-// Beyond this distance a car is recycled and respawned near the player.
-const RECYCLE_RANGE = 260;
-const RECYCLE_EVERY = 1.5;
-// A traffic car brakes when Luz is this close and in front of it.
+// Cars further than this from Luz are culled and respawned nearby.
+const CULL_RANGE = 260;
+const CULL_EVERY = 1.5;
+// A car brakes when Luz is this close and ahead of it.
 const BRAKE_RANGE = 12;
 
 export class Traffic {
@@ -44,7 +45,7 @@ export class Traffic {
     const heading = alongX
       ? (dir > 0 ? 0 : Math.PI)
       : (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
-    this.spawnAt(alongX ? x : sx, alongX ? sz : z, heading, weighted(rng, TRAFFIC_TYPES));
+    this.spawnAt(alongX ? x : sx, alongX ? sz : z, heading, weighted(rng, TRAFFIC_MIX));
   }
 
   // Place one car exactly — for staged scenes and scripted moments.
@@ -61,17 +62,17 @@ export class Traffic {
   }
 
   update(dt, playerPos, city) {
-    this._recycleFar(dt, playerPos);
-    for (const car of this.cars) this._driveCar(car, dt, playerPos, city);
+    this._cull(dt, playerPos);
+    for (const car of this.cars) this._step(car, dt, playerPos, city);
   }
 
   // Every so often, drop the cars that drifted far from the player so
   // ensureCount can respawn them nearby.
-  _recycleFar(dt, playerPos) {
+  _cull(dt, playerPos) {
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
-    this.spawnTimer = RECYCLE_EVERY;
-    const limit = RECYCLE_RANGE * RECYCLE_RANGE;
+    this.spawnTimer = CULL_EVERY;
+    const limit = CULL_RANGE * CULL_RANGE;
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
       const dx = c.pos.x - playerPos.x;
@@ -84,28 +85,38 @@ export class Traffic {
   }
 
   // One car's step: steer (finish a turn, or hold the lane and maybe
-  // start a turn), then throttle — braking if Luz is right ahead.
-  _driveCar(car, dt, playerPos, city) {
+  // start one), then throttle — braking if Luz is right ahead.
+  _step(car, dt, playerPos, city) {
     car.nextTurn -= dt;
-    const steer = this._steerFor(car, city);
-    const throttle = this._playerAhead(car, playerPos) ? -0.5 : (car.speed < car.cruise ? 0.6 : 0);
+    const steer = this._steering(car, city);
+    const throttle = this._blockedByPlayer(car, playerPos) ? -0.5 : (car.speed < car.cruise ? 0.6 : 0);
     car.drive(dt, throttle, steer, false);
     city.resolveCollision(car.pos, 2.4);
   }
 
-  // Steering for a car: ease through a turn in progress, otherwise
-  // hold the lane centre and schedule the next turn.
-  _steerFor(car, city) {
+  // Steering: a turn in progress eases toward its target heading;
+  // otherwise the car holds its lane and schedules the next turn.
+  _steering(car, city) {
     if (car.turnTarget !== null && car.turnTarget !== undefined) {
-      let diff = car.turnTarget - car.heading;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      if (Math.abs(diff) < 0.06) car.turnTarget = null;
-      return Math.max(-1, Math.min(1, diff * 2.2));
+      return this._turning(car);
     }
+    return this._laneKeeping(car, city);
+  }
+
+  // Ease through a turn in progress. Returns the steering input.
+  _turning(car) {
+    let diff = car.turnTarget - car.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) < 0.06) car.turnTarget = null;
+    return Math.max(-1, Math.min(1, diff * 2.2));
+  }
+
+  // Lane-keeping is gentle: steer toward the lane centre of the
+  // street the car is on, flipping sign with the direction of travel.
+  // When the turn timer runs out, pick the next intersection turn.
+  _laneKeeping(car, city) {
     const near = city.nearestStreet(car.pos.x, car.pos.z);
-    // Lane-keeping is gentle: steer toward the lane centre of the
-    // street the car is on, flipping sign with the direction of travel.
     const alongX = Math.abs(Math.sin(car.heading)) < 0.7;
     let steer;
     if (alongX) {
@@ -127,7 +138,7 @@ export class Traffic {
   // Is Luz right in front of this car? A traffic car with Luz in front
   // of it stops instead of rear-ending her. (Without this, traffic
   // piled into the player's car at every red-light moment.)
-  _playerAhead(car, playerPos) {
+  _blockedByPlayer(car, playerPos) {
     const pdx = playerPos.x - car.pos.x;
     const pdz = playerPos.z - car.pos.z;
     const dist = Math.hypot(pdx, pdz);
